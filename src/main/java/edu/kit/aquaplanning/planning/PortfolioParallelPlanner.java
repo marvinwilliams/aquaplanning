@@ -15,7 +15,7 @@ import edu.kit.aquaplanning.util.Logger;
 /**
  * A simple portfolio planner which launches a number of different planners in parallel.
  */
-public class PortfolioParallelPlanner extends Planner {
+public class PortfolioParallelPlanner extends GroundPlanner {
 
 	private int numThreads;
 	private List<Thread> threads;

@@ -1,8 +1,6 @@
 package edu.kit.aquaplanning.planning;
 
 import edu.kit.aquaplanning.Configuration;
-import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
-import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.util.Logger;
 
 /**
@@ -14,6 +12,7 @@ public abstract class Planner {
 	
 	protected Configuration config;
 	protected long searchStartMillis = 0;
+    public boolean isGrounded;
 	
 	public Planner(Configuration config) {
 		this.config = config;
@@ -54,30 +53,25 @@ public abstract class Planner {
 
 		return true;
 	}
-	
+
 	/**
-	 * Attempt to find a solution plan for the provided problem.
+     * Returns true if the planner is ground, false otherwise
 	 */
-	public abstract Plan findPlan(GroundPlanningProblem problem);
-	
-	/**
-	 * Constructs a planner object according to the provided configuration.
-	 */
-	public static Planner getPlanner(Configuration config) {
+	public static boolean isGround(Configuration config) {
 		
 		switch (config.plannerType) {
 		case forwardSSS:
-			return new ForwardSearchPlanner(config);
+          return true;
 		case satBased:
-			return new SimpleSatPlanner(config);
+          return true;
 		case hegemannSat:
-			return new HegemannsSatPlanner(config);
+          return true;
 		case parallel:
-			Logger.log(Logger.INFO, "Doing parallel planning with up to " 
-						+ config.numThreads + " threads.");
-			return new PortfolioParallelPlanner(config);
+          return true;
+        case liftedSat:
+          return false;
 		}
-		return null;
+		return true;
 	}
 	
 	@Override

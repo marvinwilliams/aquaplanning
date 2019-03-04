@@ -7,7 +7,7 @@ import edu.kit.aquaplanning.model.ground.*;
 import edu.kit.aquaplanning.sat.SatSolver;
 import edu.kit.aquaplanning.util.Logger;
 
-public class HegemannsSatPlanner extends Planner {
+public class HegemannsSatPlanner extends GroundPlanner {
 
     /**
      * A ranking of actions for use in SAT encodings of planning problems

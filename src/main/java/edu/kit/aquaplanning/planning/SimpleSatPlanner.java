@@ -12,7 +12,7 @@ import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
 import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.sat.SatSolver;
 
-public class SimpleSatPlanner extends Planner {
+public class SimpleSatPlanner extends GroundPlanner {
 	
 	private Map<String, Integer> actionIds;
 	// supporting actions for positive atoms
