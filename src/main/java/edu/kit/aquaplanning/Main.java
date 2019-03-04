@@ -98,7 +98,6 @@ public class Main {
 
       Plan plan = null;
 
-      if (Planner.isGround(config)) {
         // Step 2: Grounding (to get "flat" sets of actions and atoms)
         Logger.log(Logger.INFO, "Grounding ...");
         Grounder grounder = new RelaxedPlanningGraphGrounder(config);
@@ -110,6 +109,7 @@ public class Main {
         Logger.log(Logger.INFO,
             "Grounding complete. " + planningProblem.getActions().size() + " actions resulted from the grounding.\n");
 
+      if (Planner.isGround(config)) {
         // Step 3: Planning
         Logger.log(Logger.INFO, "Planning ...");
         GroundPlanner planner = GroundPlanner.getPlanner(config);

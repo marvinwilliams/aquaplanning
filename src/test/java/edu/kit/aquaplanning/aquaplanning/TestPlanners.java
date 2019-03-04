@@ -15,6 +15,7 @@ import edu.kit.aquaplanning.optimization.Clock;
 import edu.kit.aquaplanning.optimization.SimplePlanOptimizer;
 import edu.kit.aquaplanning.parsing.ProblemParser;
 import edu.kit.aquaplanning.planning.ForwardSearchPlanner;
+import edu.kit.aquaplanning.planning.GroundPlanner;
 import edu.kit.aquaplanning.planning.HegemannsSatPlanner;
 import edu.kit.aquaplanning.planning.Planner;
 import edu.kit.aquaplanning.planning.SimpleSatPlanner;
@@ -85,7 +86,7 @@ public class TestPlanners extends TestCase {
 		config.problemFile = "testfiles/gripper/p01.pddl";
 		PlanningProblem pp = new ProblemParser().parse(config.domainFile, config.problemFile);
 		GroundPlanningProblem gpp = new RelaxedPlanningGraphGrounder(config).ground(pp);
-		Plan plan = Planner.getPlanner(config).findPlan(gpp);
+		Plan plan = GroundPlanner.getPlanner(config).findPlan(gpp);
 		assertTrue(Validator.planIsValid(gpp, plan));
 		System.out.println("Initial plan length: " + plan.getLength());
 		System.out.println(plan);
@@ -120,7 +121,7 @@ public class TestPlanners extends TestCase {
 	}
 	
 	private void testSatPlan(GroundPlanningProblem gpp) {
-		Planner planner = new SimpleSatPlanner(new Configuration());
+		GroundPlanner planner = new SimpleSatPlanner(new Configuration());
 		Plan plan = planner.findPlan(gpp);
 		System.out.println(plan);
 		assertNotNull(plan);
@@ -129,7 +130,7 @@ public class TestPlanners extends TestCase {
 	}
 
 	private void testHegemannsSatPlan(GroundPlanningProblem gpp) {
-		Planner planner = new HegemannsSatPlanner(new Configuration());
+		GroundPlanner planner = new HegemannsSatPlanner(new Configuration());
 		Plan plan = planner.findPlan(gpp);
 		System.out.println(plan);
 		assertNotNull(plan);
@@ -184,7 +185,7 @@ public class TestPlanners extends TestCase {
 			config.searchStrategy = Mode.bestFirst;
 			config.heuristic = HeuristicType.relaxedPathLength;
 		}
-		Planner planner = new ForwardSearchPlanner(config);
+		GroundPlanner planner = new ForwardSearchPlanner(config);
 		Plan plan = planner.findPlan(gpp);
 		
 		System.out.println(plan);
