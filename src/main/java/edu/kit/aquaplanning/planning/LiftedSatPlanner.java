@@ -1,10 +1,12 @@
 package edu.kit.aquaplanning.planning;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.model.ground.Plan;
@@ -28,7 +30,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
     // initialize the SAT solver
     SatSolver solver = new SatSolver();
     addInitialState(problem, solver);
-
+    for (Operator o: problem.getOperators()) {
+    }
     // find the plan
     // int step = 0;
     // while (true) {
@@ -53,8 +56,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
     Set<Integer> allInitial = new HashSet<Integer>();
     System.out.println("Initial state");
     for (Condition c : problem.getInitialState()) {
-      allInitial.add(getPredicateId(c.getPredicate().getName(), c.getArguments(), 0));
-      System.out.println(c.getPredicate());
+      int pId = getPredicateId(c.getPredicate().getName(), c.getArguments(), 0);
+      allInitial.add(pId);
+      System.out.println(c + " -> " + pId);
     }
     for (int i = 1; i < stepVars + 1; i++) {
       if (allInitial.contains(i)) {
@@ -84,14 +88,14 @@ public class LiftedSatPlanner extends LiftedPlanner {
     predicateId = new HashMap<String, Integer>();
     count = 0;
     for (String n : predicates.keySet()) {
-      Predicate predicate = predicates.get(n);
+      Predicate pred = predicates.get(n);
       predicateId.put(n, count);
       System.out.println("Predicate " + n + " has base " + count);
-      int argcount = 1;
-      for (Type t : predicate.getArgumentTypes()) {
-        argcount *= constantsPerType.get(t);
+      if (pred.getNumArgs() == 0) {
+        count += 1;
+      } else {
+        count += getNumFactorized(pred.getArgumentTypes());
       }
-      count += argcount;
     }
     stepVars = count;
 
@@ -100,59 +104,67 @@ public class LiftedSatPlanner extends LiftedPlanner {
     count = 0;
     for (Operator o : operators) {
       operatorId.put(o.getName(), count);
-      int opcount = 1;
-      int argcount = 1;
-      for (Argument a : o.getArguments()) {
-        if (getsGrounded(o, a)) {
-          opcount *= constantsPerType.get(a.getType());
-        } else {
-          argcount *= constantsPerType.get(a.getType());
-        }
+      System.out.println("Operator " + o.getName() + " has base " + count);
+      List<Type> groundedTypes = o.getArguments().stream().filter(a -> isGrounded(o, a)).map(a -> a.getType())
+          .collect(Collectors.toList());
+      List<Argument> liftedArguments = o.getArguments().stream().filter(a -> !isGrounded(o, a))
+          .collect(Collectors.toList());
+      System.out.println("Operator " + o.getName() + " has " + o.getArguments().size() + " arguments, "
+          + groundedTypes.size() + " are grounded and " + liftedArguments.size() + " are lifted");
+      for (Argument a : liftedArguments) {
+        stepVars += constantsPerType.get(a.getType());
       }
-      stepVars += argcount;
-      count += opcount;
+      if (groundedTypes.isEmpty()) {
+        count += 1;
+      } else {
+        count += getNumFactorized(groundedTypes);
+      }
     }
     stepVars += count;
   }
 
-  protected boolean getsGrounded(Operator op, Argument arg) {
-    return arg.getName().startsWith("g_");
+  protected int getNumFactorized(List<Type> types) {
+    if (types.isEmpty()) {
+      return 0;
+    }
+    int factor = 1;
+    for (Type t : types) {
+      factor *= constantsPerType.get(t);
+    }
+    return factor;
   }
 
-  protected int getPredicateId(String name, List<Argument> arguments, int step) {
+  protected int getPosition(List<Argument> args) {
+    if (args.isEmpty()) {
+      return 0;
+    }
+    List<Type> types = new ArrayList<Type>();
+    for (Argument a : args) {
+      types.add(a.getType());
+    }
+    int factor = getNumFactorized(types);
+    int pos = 0;
+    for (Argument a : args) {
+      factor /= constantsPerType.get(a.getType());
+      pos += constantId.get(a.getName()) * factor;
+    }
+    return pos;
+  }
+
+  protected boolean isGrounded(Operator op, Argument arg) {
+    return arg.getName().startsWith("?p");
+  }
+
+  protected int getPredicateId(String name, List<Argument> args, int step) {
     int id = predicateId.get(name);
-    int factor = 1;
-    for (int i = 1; i < arguments.size(); i++) {
-      factor *= constantsPerType.get(arguments.get(i).getType());
-    }
-    Argument a_next = arguments.get(0);
-    for (int i = 0; i < arguments.size(); i++) {
-      Argument a = a_next;
-      id += constantId.get(a.getName()) * factor;
-      if (i < arguments.size() - 1) {
-        a_next = arguments.get(i + 1);
-        factor /= constantsPerType.get(a_next.getType());
-      }
-    }
-    return step * stepVars + id + 1;
+    id += getPosition(args);
+    return stepVars * step + id + 1;
   }
 
   protected int getOperatorId(String name, List<Argument> groundedArgs, int step) {
-    int id = predicateId.size() + operatorId.get(name);
-    int factor = 1;
-    for (int i = 1; i < groundedArgs.size(); i++) {
-      factor *= constantsPerType.get(groundedArgs.get(i).getType());
-    }
-    Argument a_next = groundedArgs.get(0);
-    for (int i = 0; i < groundedArgs.size(); i++) {
-      Argument a = a_next;
-      id += constantId.get(a.getName()) * factor;
-      if (i < groundedArgs.size() - 1) {
-        a_next = groundedArgs.get(i + 1);
-        factor /= constantsPerType.get(a_next.getType());
-      }
-    }
-    return step * stepVars + id + 1;
+    int id = predicateId.size();
+    id += operatorId.get(name) + getPosition(groundedArgs);
+    return stepVars * step + id + 1;
   }
 
   protected Map<String, Integer> predicateId;
