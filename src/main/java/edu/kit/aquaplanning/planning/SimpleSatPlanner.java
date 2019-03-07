@@ -11,6 +11,7 @@ import edu.kit.aquaplanning.model.ground.Atom;
 import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
 import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.sat.SatSolver;
+import edu.kit.aquaplanning.sat.SimpleSatPrinter;
 
 public class SimpleSatPlanner extends GroundPlanner {
 	
@@ -91,7 +92,12 @@ public class SimpleSatPlanner extends GroundPlanner {
 		initializeActionIdsAndSupports(problem);
 		
 		// initialize the SAT solver
-		SatSolver solver = new SatSolver();
+		SatSolver solver;
+		if (config.satFormulaFile != null) {
+			solver = new SatSolver(new SimpleSatPrinter(config.satFormulaFile));
+		} else {
+			solver = new SatSolver();
+		}
 		
 		// add the initial state unit clauses
 		addInitialStateClauses(problem, solver);
