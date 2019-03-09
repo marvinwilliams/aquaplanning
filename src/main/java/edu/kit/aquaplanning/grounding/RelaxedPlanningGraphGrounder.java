@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.model.ground.Action;
@@ -33,11 +34,7 @@ public class RelaxedPlanningGraphGrounder extends BaseGrounder {
 		super(config);
 	}
 	
-	/**
-	 * Grounds the entire problem.
-	 */
-	@Override
-	public GroundPlanningProblem ground(PlanningProblem problem) {
+    public GroundPlanningProblem ground(PlanningProblem problem, BiPredicate<Operator, Argument> isLifted) {
 		
 		setProblem(problem);
 		
@@ -114,5 +111,12 @@ public class RelaxedPlanningGraphGrounder extends BaseGrounder {
 		GroundPlanningProblem planningProblem = new GroundPlanningProblem(initialState, actions, 
 				goal, problem.hasActionCosts(), extractAtomNames(), extractNumericAtomNames());
 		return planningProblem;
+    }
+	/**
+	 * Grounds the entire problem.
+	 */
+	@Override
+	public GroundPlanningProblem ground(PlanningProblem problem) {
+      return ground(problem, (o, a) -> false);
 	}
 }

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
+import java.util.function.BiPredicate;
 
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
@@ -49,14 +50,17 @@ public class OperatorIndex {
 	private Map<String, Integer> argumentIds;
 	
 	private PlanningProblem p;
+
+    private BiPredicate<Operator, Argument> argumentFilter;
 	
-	public OperatorIndex(PlanningProblem p) {
+	public OperatorIndex(PlanningProblem p, BiPredicate<Operator, Argument> isLifted) {
 		
 		this.instantiatedOperators = new HashMap<>();
 		this.predicateOperatorMap = new HashMap<>();
 		this.operatorsWithoutPreconditions = new ArrayList<>();
 		this.operatorArgPositions = new HashMap<>();
 		this.p = p;
+        this.argumentFilter = isLifted;
 		
 		// For each operator
 		opLoop: for (Operator op : p.getOperators()) {
@@ -306,6 +310,9 @@ public class OperatorIndex {
 					
 					// Assignment is not complete yet: decide on next argument
 					int argPos = orderedArgIndices[decisionLevel];
+                    if (argumentFilter.test(op, eligibleArguments.get(argPos))) {
+
+                    }
 					for (Argument arg : eligibleArguments.get(argPos)) {
 						ArgumentAssignment newAssignment = new ArgumentAssignment(partialAssignment);
 						newAssignment.set(argPos, arg);

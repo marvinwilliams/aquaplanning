@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
@@ -34,12 +35,12 @@ public class RelaxedPlanningGraph {
 	 * The graph's layers are computed successively by calling hasNextLayer
 	 * and computeNextLayer.
 	 */
-	public RelaxedPlanningGraph(PlanningProblem problem) {
+	public RelaxedPlanningGraph(PlanningProblem problem, BiPredicate<Operator, Argument> isLifted) {
 		
 		this.liftedActions = new ArrayList<>();
 		this.liftedStates = new ArrayList<>();
 		
-		this.opIndex = new OperatorIndex(problem);
+		this.opIndex = new OperatorIndex(problem, isLifted);
 		
 		constants = new ArrayList<>();
 		constants.addAll(problem.getConstants());
