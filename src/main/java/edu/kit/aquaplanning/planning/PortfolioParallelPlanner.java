@@ -96,7 +96,7 @@ public class PortfolioParallelPlanner extends GroundPlanner {
 			}
 			
 			// Create planner
-			Planner planner = Planner.getPlanner(config);
+			GroundPlanner planner = GroundPlanner.getPlanner(config);
 			
 			// Create a thread running the planner
 			final int threadNum = i;

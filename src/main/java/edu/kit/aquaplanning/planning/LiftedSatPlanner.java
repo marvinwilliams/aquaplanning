@@ -6,17 +6,23 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Stack;
 import java.util.stream.Collectors;
 
 import edu.kit.aquaplanning.Configuration;
+import edu.kit.aquaplanning.grounding.RelaxedPlanningGraph;
+import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
 import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
-import edu.kit.aquaplanning.model.lifted.Predicate;
 import edu.kit.aquaplanning.model.lifted.Type;
+import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition;
+import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
 import edu.kit.aquaplanning.model.lifted.condition.Condition;
+import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
 import edu.kit.aquaplanning.sat.SatSolver;
+import edu.kit.aquaplanning.util.Pair;
 
 public class LiftedSatPlanner extends LiftedPlanner {
 
@@ -26,11 +32,101 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   @Override
   public Plan findPlan(PlanningProblem problem) {
-    setIDs(problem);
+    RelaxedPlanningGraphGrounder grounder = new RelaxedPlanningGraphGrounder(config);
+    RelaxedPlanningGraph graph = grounder.initGrounding(problem, (o, a) -> a.getName().startsWith("?x"));
+    System.out.println(graph.getLiftedState(graph.getCurrentLayer()));
+    List<Condition> predicates = new ArrayList<>();
+    for (Condition c : graph.getLiftedState(graph.getCurrentLayer())) {
+      predicates.addAll(groundPredicate(problem, c));
+    }
+    List<Operator> operators = graph.getLiftedActions();
+    for (Operator o : operators) {
+      o.removeConstantArguments();
+    }
+
+    setIDs(graph.getLiftedState(graph.getCurrentLayer()),
+    // graph.getLiftedActions());
     // initialize the SAT solver
     SatSolver solver = new SatSolver();
-    addInitialState(problem, solver);
-    for (Operator o: problem.getOperators()) {
+
+    addInitialState(problem, predicates, solver);
+    int step = 0;
+    int count;
+
+    while (true) {
+      for (Operator o : operators) {
+        int oId = getOperatorId(o, step);
+        count = 0;
+        for (Type t : o.getArgumentTypes()) {
+          int numConstantsOfType = constantsPerType.get(t).size();
+          // Operator -> each parameter
+          int[] parameters = new int[numConstantsOfType + 1];
+          parameters[0] = -oId;
+          for (int i = 1; i < numConstantsOfType + 1; i++) {
+            parameters[i] = getParameterId(o, count, step) + i - 1;
+          }
+          solver.addClause(parameters);
+          // AtMostOne Const per Parameter
+          for (int i = 0; i < numConstantsOfType; i++) {
+            for (int j = i + 1; j < numConstantsOfType; j++) {
+              solver.addClause(new int[] { getParameterId(o, count, step) + i, getParameterId(o, count, step) + j });
+            }
+          }
+          count++;
+        }
+        // Operator implies Precond and Effects
+        List<Condition> preconditions = new ArrayList<>();
+        if (o.getPrecondition().getConditionType() == ConditionType.atomic) {
+          preconditions.add((Condition) o.getPrecondition());
+        } else if (o.getPrecondition().getConditionType() == ConditionType.conjunction) {
+          for (AbstractCondition ac : ((ConditionSet) o.getPrecondition()).getConditions()) {
+            preconditions.add((Condition) ac);
+          }
+        } else {
+          System.out.println("ERROR: not a flat precondition");
+        }
+        for (Condition liftedPrecondition : preconditions) {
+          List<Pair<Integer, Integer>> parameterPos = new ArrayList<>();
+          count = 0;
+          for (Argument a : ((Condition) liftedPrecondition).getArguments()) {
+            if (!a.isConstant()) {
+              parameterPos.add(new Pair<>(count, o.getArguments().indexOf(a)));
+            }
+            count++;
+          }
+          Set<Condition> groundPreconditions = groundPredicate(problem, liftedPrecondition);
+          for (Condition c : groundPreconditions) {
+            int pId = predicateId.getOrDefault(c, -1);
+            // Ground precond not relevant
+            if (pId == -1) {
+              int[] clause = new int[parameterPos.size()];
+              count = 0;
+              for (Pair<Integer, Integer> p : parameterPos) {
+                clause[count++] = -(getParameterId(o, p.getRight(), step) + constantsPerType
+                    .get(o.getArgumentTypes().get(p.getRight())).indexOf(c.getArguments().get(p.getLeft())));
+              }
+              solver.addClause(clause);
+            } else {
+              int[] clause = new int[parameterPos.size() + 2];
+              clause[0] = getOperatorId(o, step);
+              count = 1;
+              for (Pair<Integer, Integer> p : parameterPos) {
+                clause[count++] = -(getParameterId(o, p.getRight(), step) + constantsPerType
+                    .get(o.getArgumentTypes().get(p.getRight())).indexOf(c.getArguments().get(p.getLeft())));
+              }
+              clause[count] = (c.isNegated() ? -1:1) * getPredicateId(c, step);
+              solver.addClause(clause);
+            }
+          }
+        }
+
+        // Forbid parallelism
+
+        // Assume goal
+
+        // Frame axioms
+      }
+
     }
     // find the plan
     // int step = 0;
@@ -52,17 +148,108 @@ public class LiftedSatPlanner extends LiftedPlanner {
     return plan;
   }
 
-  protected void addInitialState(PlanningProblem problem, SatSolver solver) {
+  protected Set<Condition> groundPredicate(PlanningProblem problem, Condition predicate) {
+    Set<Condition> result = new HashSet<>();
+    Stack<Condition> work = new Stack<Condition>();
+    work.add(predicate);
+    while (!work.isEmpty()) {
+      Condition first = work.pop();
+      int groundPos = -1;
+      for (int i = 0; i < first.getNumArgs(); i++) {
+        if (!first.getArguments().get(i).isConstant()) {
+          groundPos = i;
+          break;
+        }
+      }
+      if (groundPos == -1) {
+        result.add(first);
+        continue;
+      }
+      for (Argument a : problem.getConstants()) {
+        if (problem.isArgumentOfType(a, first.getArguments().get(groundPos).getType())) {
+          Condition copy = first.copy();
+          copy.getArguments().set(groundPos, a);
+          work.push(copy);
+        }
+      }
+    }
+    return result;
+  }
+
+  protected void setIDs(PlanningProblem problem, List<Condition> predicates, List<Operator> operators) {
+    stepVars = predicates.size() + operators.size();
+    constantsPerType = new HashMap<>();
+    negEffects = new ArrayList<>();
+    posEffects = new ArrayList<>();
+    for (Argument a : problem.getConstants()) {
+      constantsPerType.putIfAbsent(a.getType(), new ArrayList<Argument>());
+      constantsPerType.get(a.getType()).add(a);
+    }
+    int count = 0;
+    predicateId = new HashMap<>();
+    for (Condition c : predicates) {
+      predicateId.put(c, count++);
+      negEffects.add(new ArrayList<>());
+      posEffects.add(new ArrayList<>());
+    }
+    count = 0;
+    operatorId = new HashMap<>();
+    numParameters = new ArrayList<>();
+    for (Operator o : operators) {
+      operatorId.put(o, count++);
+      numParameters
+          .add(o.getArgumentTypes().stream().map(t -> constantsPerType.get(t).size()).reduce(0, (x, y) -> x + y));
+      stepVars += numParameters.get(count);
+      List<Condition> effects = new ArrayList<>();
+      if (o.getEffect().getConditionType() == ConditionType.atomic) {
+        effects.add((Condition) o.getEffect());
+      } else if (o.getEffect().getConditionType() == ConditionType.conjunction) {
+        for (AbstractCondition ac: ((ConditionSet) o.getEffect()).getConditions()) {
+          effects.add((Condition) ac);
+        }
+      } else {
+        System.out.println("ERROR: effects not flat");
+      }
+      for (Condition c: effects) {
+          List<Pair<Integer, Integer>> parameterPos = new ArrayList<>();
+          count = 0;
+          for (Argument a : ((Condition) liftedPrecondition).getArguments()) {
+            if (!a.isConstant()) {
+              parameterPos.add(new Pair<>(count, o.getArguments().indexOf(a)));
+            }
+            count++;
+          }
+      }
+    }
+  }
+
+  protected int getPredicateId(Condition cond, int step) {
+    int id = predicateId.get(cond);
+    return stepVars * step + id + 1;
+  }
+
+  protected int getOperatorId(Operator operator, int step) {
+    int id = operatorId.get(operator);
+    return stepVars * step + predicateId.size() + id + 1;
+  }
+
+  protected int getParameterId(Operator operator, int pos, int step) {
+    int id = 0;
+    for (int i = 0; i < operatorId.get(operator); i++) {
+      id += numParameters.get(i);
+    }
+    for (int i = 0; i < pos; i++) {
+      id += constantsPerType.get(operator.getArgumentTypes().get(i)).size();
+    }
+    return stepVars * step + predicateId.size() + operatorId.size() + id + 1;
+  }
+
+  protected void addInitialState(PlanningProblem problem, Set<Condition> predicates, SatSolver solver) {
     Set<Integer> allInitial = new HashSet<Integer>();
     System.out.println("Initial state");
-    for (Condition c : problem.getInitialState()) {
-      int pId = getPredicateId(c.getPredicate().getName(), c.getArguments(), 0);
-      allInitial.add(pId);
-      System.out.println(c + " -> " + pId);
-    }
-    for (int i = 1; i < stepVars + 1; i++) {
+    allInitial.addAll(problem.getInitialState().stream().map(c -> getPredicateId(c, 0)).collect(Collectors.toSet()));
+    for (int i = 1; i < predicateId.size() + 1; i++) {
       if (allInitial.contains(i)) {
-        System.out.println("Added clause " + i);
         solver.addClause(new int[] { i });
       } else {
         solver.addClause(new int[] { -i });
@@ -70,106 +257,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
     }
   }
 
-  protected void setIDs(PlanningProblem problem) {
-    int numConstants = problem.getConstants().size();
-    constantsPerType = new HashMap<Type, Integer>();
-
-    List<Argument> constants = problem.getConstants();
-    constantId = new HashMap<String, Integer>();
-    int count = 0;
-    for (Argument a : constants) {
-      constantsPerType.putIfAbsent(a.getType(), 0);
-      constantsPerType.put(a.getType(), constantsPerType.get(a.getType()) + 1);
-      constantId.put(a.getName(), count);
-      count++;
-    }
-
-    Map<String, Predicate> predicates = problem.getPredicates();
-    predicateId = new HashMap<String, Integer>();
-    count = 0;
-    for (String n : predicates.keySet()) {
-      Predicate pred = predicates.get(n);
-      predicateId.put(n, count);
-      System.out.println("Predicate " + n + " has base " + count);
-      if (pred.getNumArgs() == 0) {
-        count += 1;
-      } else {
-        count += getNumFactorized(pred.getArgumentTypes());
-      }
-    }
-    stepVars = count;
-
-    List<Operator> operators = problem.getOperators();
-    operatorId = new HashMap<String, Integer>();
-    count = 0;
-    for (Operator o : operators) {
-      operatorId.put(o.getName(), count);
-      System.out.println("Operator " + o.getName() + " has base " + count);
-      List<Type> groundedTypes = o.getArguments().stream().filter(a -> isGrounded(o, a)).map(a -> a.getType())
-          .collect(Collectors.toList());
-      List<Argument> liftedArguments = o.getArguments().stream().filter(a -> !isGrounded(o, a))
-          .collect(Collectors.toList());
-      System.out.println("Operator " + o.getName() + " has " + o.getArguments().size() + " arguments, "
-          + groundedTypes.size() + " are grounded and " + liftedArguments.size() + " are lifted");
-      for (Argument a : liftedArguments) {
-        stepVars += constantsPerType.get(a.getType());
-      }
-      if (groundedTypes.isEmpty()) {
-        count += 1;
-      } else {
-        count += getNumFactorized(groundedTypes);
-      }
-    }
-    stepVars += count;
-  }
-
-  protected int getNumFactorized(List<Type> types) {
-    if (types.isEmpty()) {
-      return 0;
-    }
-    int factor = 1;
-    for (Type t : types) {
-      factor *= constantsPerType.get(t);
-    }
-    return factor;
-  }
-
-  protected int getPosition(List<Argument> args) {
-    if (args.isEmpty()) {
-      return 0;
-    }
-    List<Type> types = new ArrayList<Type>();
-    for (Argument a : args) {
-      types.add(a.getType());
-    }
-    int factor = getNumFactorized(types);
-    int pos = 0;
-    for (Argument a : args) {
-      factor /= constantsPerType.get(a.getType());
-      pos += constantId.get(a.getName()) * factor;
-    }
-    return pos;
-  }
-
-  protected boolean isGrounded(Operator op, Argument arg) {
-    return arg.getName().startsWith("?p");
-  }
-
-  protected int getPredicateId(String name, List<Argument> args, int step) {
-    int id = predicateId.get(name);
-    id += getPosition(args);
-    return stepVars * step + id + 1;
-  }
-
-  protected int getOperatorId(String name, List<Argument> groundedArgs, int step) {
-    int id = predicateId.size();
-    id += operatorId.get(name) + getPosition(groundedArgs);
-    return stepVars * step + id + 1;
-  }
-
-  protected Map<String, Integer> predicateId;
-  protected Map<String, Integer> constantId;
-  protected Map<String, Integer> operatorId;
-  protected Map<Type, Integer> constantsPerType;
+  protected Map<Type, List<Argument>> constantsPerType;
+  protected List<Integer> numParameters;
+  protected List<List<Pair<Integer, List<Pair<Integer, Argument>>>>> negEffects;
+  protected List<List<Pair<Integer, List<Pair<Integer, Argument>>>>> posEffects;
   protected int stepVars;
 }

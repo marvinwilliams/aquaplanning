@@ -25,98 +25,105 @@ import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
 import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
 
 /**
- * Grounder doing a reachability analysis through some 
- * approximated state space until a fixpoint is reached.
+ * Grounder doing a reachability analysis through some approximated state space
+ * until a fixpoint is reached.
  */
 public class RelaxedPlanningGraphGrounder extends BaseGrounder {
-	
-	public RelaxedPlanningGraphGrounder(Configuration config) {
-		super(config);
-	}
-	
-    public GroundPlanningProblem ground(PlanningProblem problem, BiPredicate<Operator, Argument> isLifted) {
-		
-		setProblem(problem);
-		
-		// First, preprocess the problem into a standardized structure
-		new Preprocessor(config).preprocess(problem);
-		
-		// Create a sorted list of constants
-		constants = new ArrayList<>();
-		constants.addAll(problem.getConstants());
-		constants.sort((c1, c2) -> c1.getName().compareTo(c2.getName()));
-		
-		// Will equality predicates remain in the problem?
-		if (config.keepEqualities) {
-			// --yes: add equality conditions
-			Predicate pEquals = problem.getPredicate("=");
-			if (pEquals != null) {
-				// for all objects c: add the condition (= c c)
-				for (Argument constant : constants) {
-					List<Argument> args = new ArrayList<>();
-					args.add(constant);
-					args.add(constant);
-					Condition equalsCond = new Condition(pEquals);
-					equalsCond.addArgument(constant);
-					equalsCond.addArgument(constant);
-					problem.getInitialState().add(equalsCond);
-				}
-			}
-		}
-		
-		// Traverse delete-relaxed state space
-		RelaxedPlanningGraph graph = new RelaxedPlanningGraph(problem);
-		while (graph.hasNextLayer()) {
-			graph.computeNextLayer();
-		}
-		// Generate action objects
-		Logger.log(Logger.INFO_V, "Generating ground action objects ...");
-		Set<Action> actionSet = new HashSet<>();
-		for (Operator op : graph.getLiftedActions()) {
-			Action a = getAction(op); // actual grounding
-			if (a != null) {
-				actionSet.add(a);
-			}
-		}
-		actions = new ArrayList<>();
-		actions.addAll(actionSet);
-		actions.sort((a1,a2) -> a1.getName().compareTo(a2.getName()));
-		
-		// Extract initial state
-		State initialState = getInitialState();
-		
-		// Extract goal
-		ConditionSet goalSet = new ConditionSet(ConditionType.conjunction);
-		problem.getGoals().forEach(c -> goalSet.add(c));
-		Goal goal;
-		Pair<List<Atom>, Precondition> splitGoal = splitAndGroundPrecondition(goalSet);
-		if (splitGoal.getRight() != null) {
-			// Complex goal: add simple AND complex parts
-			Precondition complexGoal = splitGoal.getRight();
-			splitGoal.getLeft().forEach(atom -> {
-				Precondition atomPre = new Precondition(PreconditionType.atom);
-				atomPre.setAtom(atom);
-				complexGoal.add(atomPre);
-			});
-			goal = new Goal(complexGoal);
-		} else {
-			// Simple goal
-			goal = new Goal(splitGoal.getLeft());
-		}
-		
-		// Ground derived predicates' semantics
-		groundDerivedAtoms();
-		
-		// Assemble finished problem
-		GroundPlanningProblem planningProblem = new GroundPlanningProblem(initialState, actions, 
-				goal, problem.hasActionCosts(), extractAtomNames(), extractNumericAtomNames());
-		return planningProblem;
+
+  public RelaxedPlanningGraphGrounder(Configuration config) {
+    super(config);
+  }
+
+  public RelaxedPlanningGraph initGrounding(PlanningProblem problem, BiPredicate<Operator, Argument> isGrounded) {
+    setProblem(problem);
+
+    // First, preprocess the problem into a standardized structure
+    new Preprocessor(config).preprocess(problem);
+
+    // Create a sorted list of constants
+    constants = new ArrayList<>();
+    constants.addAll(problem.getConstants());
+    constants.sort((c1, c2) -> c1.getName().compareTo(c2.getName()));
+
+    // Will equality predicates remain in the problem?
+    if (config.keepEqualities) {
+      // --yes: add equality conditions
+      Predicate pEquals = problem.getPredicate("=");
+      if (pEquals != null) {
+        // for all objects c: add the condition (= c c)
+        for (Argument constant : constants) {
+          List<Argument> args = new ArrayList<>();
+          args.add(constant);
+          args.add(constant);
+          Condition equalsCond = new Condition(pEquals);
+          equalsCond.addArgument(constant);
+          equalsCond.addArgument(constant);
+          problem.getInitialState().add(equalsCond);
+        }
+      }
     }
-	/**
-	 * Grounds the entire problem.
-	 */
-	@Override
-	public GroundPlanningProblem ground(PlanningProblem problem) {
-      return ground(problem, (o, a) -> false);
-	}
+
+    // Traverse delete-relaxed state space
+    RelaxedPlanningGraph graph = new RelaxedPlanningGraph(problem, isGrounded);
+    while (graph.hasNextLayer()) {
+      graph.computeNextLayer();
+    }
+    return graph;
+  }
+
+  public GroundPlanningProblem ground(PlanningProblem problem, BiPredicate<Operator, Argument> isGrounded) {
+
+    RelaxedPlanningGraph graph = initGrounding(problem, isGrounded);
+
+    // Generate action objects
+    Logger.log(Logger.INFO_V, "Generating ground action objects ...");
+    Set<Action> actionSet = new HashSet<>();
+    for (Operator op : graph.getLiftedActions()) {
+      Action a = getAction(op); // actual grounding
+      if (a != null) {
+        actionSet.add(a);
+      }
+    }
+    actions = new ArrayList<>();
+    actions.addAll(actionSet);
+    actions.sort((a1, a2) -> a1.getName().compareTo(a2.getName()));
+
+    // Extract initial state
+    State initialState = getInitialState();
+
+    // Extract goal
+    ConditionSet goalSet = new ConditionSet(ConditionType.conjunction);
+    problem.getGoals().forEach(c -> goalSet.add(c));
+    Goal goal;
+    Pair<List<Atom>, Precondition> splitGoal = splitAndGroundPrecondition(goalSet);
+    if (splitGoal.getRight() != null) {
+      // Complex goal: add simple AND complex parts
+      Precondition complexGoal = splitGoal.getRight();
+      splitGoal.getLeft().forEach(atom -> {
+        Precondition atomPre = new Precondition(PreconditionType.atom);
+        atomPre.setAtom(atom);
+        complexGoal.add(atomPre);
+      });
+      goal = new Goal(complexGoal);
+    } else {
+      // Simple goal
+      goal = new Goal(splitGoal.getLeft());
+    }
+
+    // Ground derived predicates' semantics
+    groundDerivedAtoms();
+
+    // Assemble finished problem
+    GroundPlanningProblem planningProblem = new GroundPlanningProblem(initialState, actions, goal,
+        problem.hasActionCosts(), extractAtomNames(), extractNumericAtomNames());
+    return planningProblem;
+  }
+
+  /**
+   * Grounds the entire problem.
+   */
+  @Override
+  public GroundPlanningProblem ground(PlanningProblem problem) {
+    return ground(problem, (o, a) -> true);
+  }
 }

@@ -12,7 +12,7 @@ import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
 import edu.kit.aquaplanning.parsing.ProblemParser;
 import edu.kit.aquaplanning.planning.ForwardSearchPlanner;
-import edu.kit.aquaplanning.planning.Planner;
+import edu.kit.aquaplanning.planning.GroundPlanner;
 import edu.kit.aquaplanning.planning.PortfolioParallelPlanner;
 import edu.kit.aquaplanning.planning.SimpleSatPlanner;
 import edu.kit.aquaplanning.planning.SearchStrategy.Mode;
@@ -47,7 +47,7 @@ public class TestParallelPlanning extends TestCase {
 		testOnAll(spp);
 	}
 
-	private void testOnAll(Planner planner) throws IOException {
+	private void testOnAll(GroundPlanner planner) throws IOException {
 		File benchdir = new File("benchmarks");
 		for (File domdir : benchdir.listFiles()) {
 			String domain = domdir.getCanonicalPath() + "/domain.pddl";
@@ -61,7 +61,7 @@ public class TestParallelPlanning extends TestCase {
 		}
 	}
 	
-	private void testPlannerOnBenchmark(Planner planner, String domain, String problem) throws IOException {
+	private void testPlannerOnBenchmark(GroundPlanner planner, String domain, String problem) throws IOException {
 		System.out.println("Testing planner on " + domain + ", " + problem);
 		PlanningProblem pp = new ProblemParser().parse(domain, problem);
 		Grounder grounder = new RelaxedPlanningGraphGrounder(new Configuration());
