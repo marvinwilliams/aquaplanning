@@ -35,11 +35,33 @@ public class LiftedSatPlanner extends LiftedPlanner {
     problem = p;
     RelaxedPlanningGraphGrounder grounder = new RelaxedPlanningGraphGrounder(config);
     RelaxedPlanningGraph graph = grounder.initGrounding(problem, (o, a) -> a.getName().startsWith("?x"));
+    stepVars = 0;
     predicates = new ArrayList<>();
+    predicateId = new HashMap<>();
+    groundPreconditions = new ArrayList<>();
+    groundEffects = new ArrayList<>();
     for (Condition c : graph.getLiftedState(graph.getCurrentLayer())) {
-      predicates.addAll(groundPredicate(c));
+      System.out.println("Lifted: " + c);
+      if (c.isNegated()) {
+        System.out.println("ERROR: predicate in plangraph negated");
+        c = c.withoutNegation();
+      }
+      for (Condition gc : groundPredicate(c)) {
+        System.out.println("Added " + gc);
+        predicates.add(gc);
+        predicateId.put(gc, predicates.size() - 1);
+        gc = gc.withoutNegation();
+        gc.setNegated(true);
+        predicateId.put(gc, predicates.size() - 1);
+        groundPreconditions.add(new ArrayList<>());
+        groundPreconditions.add(new ArrayList<>());
+        groundEffects.add(new ArrayList<>());
+        groundEffects.add(new ArrayList<>());
+        stepVars++;
+      }
     }
     operators = graph.getLiftedActions();
+    stepVars += operators.size();
     for (Operator o : operators) {
       o.removeConstantArguments();
     }
@@ -48,12 +70,29 @@ public class LiftedSatPlanner extends LiftedPlanner {
     // initialize the SAT solver
     SatSolver solver = new SatSolver();
 
-    addInitialState(problem, predicates, solver);
+    addInitialState(solver);
     int step = 0;
-    int count;
 
     while (true) {
-
+      List<Integer> goal = getGoal();
+      int[] assumptions = new int[goal.size()];
+      for (int i = 0; i < goal.size(); i++) {
+        assumptions[i] = goal.get(i);
+      }
+      if (solver.isSatisfiable(assumptions)) {
+        System.out.println("Solution found!");
+        break;
+      }
+      System.out.println("No solution found in step " + step);
+      for (List<Integer> clause : clauses) {
+        int[] tmp = new int[clause.size()];
+        for (int i = 0; i < clause.size(); i++) {
+          tmp[i] = clause.get(i);
+        }
+        solver.addClause(tmp);
+      }
+      nextStep();
+      step++;
     }
     // find the plan
     // int step = 0;
@@ -71,7 +110,6 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
     // Decode the plan
     Plan plan = new Plan();
-    int[] model = solver.getModel();
     return plan;
   }
 
@@ -104,59 +142,40 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   protected void setIDs() {
-    types = new ArrayList<>();
+    typeId = new HashMap<>();
+    constants = new ArrayList<>();
+    constantId = new HashMap<>();
     for (Argument a : problem.getConstants()) {
-      if (!types.contains(a.getType())) {
-        types.add(a.getType());
-        constantsPerType.add(new ArrayList<>());
+      if (!typeId.containsKey(a.getType())) {
+        typeId.put(a.getType(), typeId.size());
+        constants.add(new ArrayList<>());
       }
-      constantsPerType.get(types.indexOf(a.getType())).add(a);
+      int id = typeId.get(a.getType());
+      constants.get(id).add(a);
+      constantId.put(a, constants.get(id).size() - 1);
     }
-    groundPreconditions = new ArrayList<>();
-    groundEffects = new ArrayList<>();
-    for (int i = 0; i < predicates.size(); i++) {
-      groundPreconditions.add(new ArrayList<>());
-      groundPreconditions.add(new ArrayList<>());
-      groundEffects.add(new ArrayList<>());
-      groundEffects.add(new ArrayList<>());
-      if (predicates.get(i).isNegated()) {
-        System.out.println("ERROR: Not negated predicate in plan graph");
-      }
-    }
-    numParameters = new ArrayList<>();
-    for (int i = 0; i < operators.size(); i++) {
-      Operator operator = operators.get(i);
-      numParameters
-          .add(operator.getArgumentTypes().stream().mapToInt(t -> constantsPerType.get(types.indexOf(t)).size()).sum());
+    operatorParameters = new ArrayList<>();
+    for (int oNr = 0; oNr < operators.size(); oNr++) {
+      Operator operator = operators.get(oNr);
+      int numParameters = operator.getArgumentTypes().stream().mapToInt(t -> constants.get(typeId.get(t)).size()).sum();
+      operatorParameters.add(numParameters);
+      stepVars += numParameters;
       {
-        List<Condition> effects = getFlatConditions(operator.getEffect());
-        for (Condition c : effects) {
-          List<Integer> paramList = getParamList(i, c);
-          Set<Condition> groundConditions = groundPredicate(c);
-          if (c.isNegated()) {
-            for (Condition gc : groundPredicate(c)) {
-              groundEffects.get(predicates.indexOf(gc.withoutNegation())).get(1).add(new Pair<>(i, paramList));
-            }
-          } else {
-            for (Condition gc : groundPredicate(c)) {
-              groundEffects.get(predicates.indexOf(gc)).get(0).add(new Pair<>(i, paramList));
-            }
+        List<Condition> preconditions = getFlatConditions(operator.getPrecondition());
+        for (Condition c : preconditions) {
+          List<Pair<Integer, Integer>> paramList = getParamList(oNr, c);
+          for (Condition gc : groundPredicate(c)) {
+            System.out.println(gc + " " + predicateId.get(gc));
+            groundPreconditions.get(predicateId.get(gc) + (gc.isNegated() ? 1 : 0)).add(new Pair<>(oNr, paramList));
           }
         }
       }
       {
-        List<Condition> preconditions = getFlatConditions(operator.getPrecondition());
-        for (Condition c : preconditions) {
-          List<Integer> paramList = getParamList(i, c);
-          Set<Condition> groundConditions = groundPredicate(c);
-          if (c.isNegated()) {
-            for (Condition gc : groundPredicate(c)) {
-              groundPreconditions.get(predicates.indexOf(gc.withoutNegation())).get(1).add(new Pair<>(i, paramList));
-            }
-          } else {
-            for (Condition gc : groundPredicate(c)) {
-              groundPreconditions.get(predicates.indexOf(gc)).get(0).add(new Pair<>(i, paramList));
-            }
+        List<Condition> effects = getFlatConditions(operator.getEffect());
+        for (Condition c : effects) {
+          List<Pair<Integer, Integer>> paramList = getParamList(oNr, c);
+          for (Condition gc : groundPredicate(c)) {
+            groundEffects.get(predicateId.get(gc) + (gc.isNegated() ? 1 : 0)).add(new Pair<>(oNr, paramList));
           }
         }
       }
@@ -169,20 +188,20 @@ public class LiftedSatPlanner extends LiftedPlanner {
       Operator operator = operators.get(oNr);
       for (int pos = 0; pos < operator.getArguments().size(); pos++) {
         Argument argument = operator.getArguments().get(pos);
-        List<Argument> constants = constantsPerType.get(types.indexOf(argument.getType()));
+        List<Argument> argumentConstants = constants.get(typeId.get(argument.getType()));
         {
           // Operator -> each parameter
           List<Integer> clause = new ArrayList<>();
           clause.add(-getOperatorId(oNr));
-          for (int cNr = 0; cNr < constants.size(); cNr++) {
+          for (int cNr = 0; cNr < argumentConstants.size(); cNr++) {
             clause.add(getParameterId(oNr, pos, cNr));
           }
           clauses.add(clause);
         }
         {
           // <=1 per Parameter
-          for (int c1 = 0; c1 < constants.size(); c1++) {
-            for (int c2 = c1 + 1; c2 < constants.size(); c2++) {
+          for (int c1 = 0; c1 < argumentConstants.size(); c1++) {
+            for (int c2 = c1 + 1; c2 < argumentConstants.size(); c2++) {
               List<Integer> clause = new ArrayList<>();
               clause.add(-getParameterId(oNr, pos, c1));
               clause.add(-getParameterId(oNr, pos, c2));
@@ -191,148 +210,183 @@ public class LiftedSatPlanner extends LiftedPlanner {
           }
         }
       }
-      {
-        // Operator implies Preconditions
-        List<Condition> preconditions = getFlatConditions(operator.getPrecondition());
-        for (Condition c : preconditions) {
-          List<Integer> paramList = getParamList(operator, c);
-          for (Condition gc : groundPredicate(c)) {
-            List<Integer> clause = new ArrayList<>();
-            clause.add(-getOperatorId(oNr));
-            for (int i = 0; i < paramList.size(); i++) {
-              if (paramList.get(i) > -1) {
-                clause.add(-getParameterId(operator, paramList.get(i), gc.getArguments().get(i)));
-              }
-            }
-            if (predicates.contains(gc)) {
-              clause.add((gc.isNegated() ? -1 : 1) * getPredicateId(gc));
-              clauses.add(clause);
-            } else {
-              if (gc.isNegated()) {
-                // not in predicates and negative -> rigid, trivially true
-              } else {
-                // not in predicates but required -> not reachable
-                clauses.add(clause);
-              }
-            }
-          }
-        }
-      }
-      {
-        // Operator implies Effects
-        List<Condition> effects = getFlatConditions(operator.getEffect());
-        for (Condition c : effects) {
-          List<Integer> paramList = getParamList(operator, c);
-          for (Condition gc : groundPredicate(c)) {
-            List<Integer> clause = new ArrayList<>();
-            clause.add(-getOperatorId(oNr));
-            for (int i = 0; i < paramList.size(); i++) {
-              if (paramList.get(i) > -1) {
-                clause.add(-getParameterId(operator, paramList.get(i), gc.getArguments().get(i)));
-              }
-            }
-            if (predicates.contains(gc)) {
-              clause.add((gc.isNegated() ? -1 : 1) * (getPredicateId(gc) + stepVars));
-              clauses.add(clause);
-            } else {
-              if (gc.isNegated()) {
-                // not in predicates and negative -> rigid, trivially true
-              } else {
-                // not in predicates but required -> not reachable
-                clauses.add(clause);
-              }
-            }
-          }
-        }
-      }
-      {
-        // Forbid interference
-        for (Operator other : operators) {
-          if (other == operator) {
-            continue;
-          }
-          for (Condition effect : getFlatConditions(operator.getEffect())) {
-            List<Integer> paramList1 = getParamList(operator, effect);
-            for (Condition precondition : getFlatConditions(other.getPrecondition())) {
-              if (effect.getPredicate().equals(precondition.getPredicate())) {
-                if (effect.isNegated() != precondition.isNegated()) {
-                  List<Integer> paramList2 = getParamList(other, precondition);
-                  Set<Condition> groundedPreconditions = groundPredicate(precondition.withoutNegation());
-                  for (Condition groundedEffect : groundPredicate(effect.withoutNegation())) {
-                    if (groundedPreconditions.contains(groundedEffect)) {
-                      List<Integer> clause = new ArrayList<>();
-                      clause.add(-getOperatorId(operator));
-                      clause.add(-getOperatorId(other));
-                      for (int i = 0; i < groundedEffect.getNumArgs(); i++) {
-                        if (paramList1.get(i) > -1) {
-                          clause
-                              .add(-getParameterId(operator, paramList1.get(i), groundedEffect.getArguments().get(i)));
-                        }
-                        if (paramList2.get(i) > -1) {
-                          clause.add(-getParameterId(other, paramList2.get(i), groundedEffect.getArguments().get(i)));
-                        }
-                      }
-                      clauses.add(clause);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
     }
     for (int pNr = 0; pNr < predicates.size(); pNr++) {
       Condition predicate = predicates.get(pNr);
-
-      for (int ispos = 0; ispos < 2; ispos++) {
-        for (Pair<Integer, List<Integer>> pair : groundEffects.get(pNr).get(ispos)) {
-          int o = pair.getLeft();
-          List<Integer> paramList = pair.getRight();
+      // positive
+      for (Pair<Integer, List<Pair<Integer, Integer>>> pair : groundPreconditions.get(pNr)) {
+        int oNr = pair.getLeft();
+        List<Pair<Integer, Integer>> paramList = pair.getRight();
+        {
+          // action implies precondition
+          List<Integer> clause = new ArrayList<>();
+          clause.add(-getOperatorId(oNr));
+          for (Pair<Integer, Integer> paramPos : paramList) {
+            Argument a = predicate.getArguments().get(paramPos.getLeft());
+            clause.add(-getParameterId(oNr, paramPos.getRight(), constantId.get(a)));
+          }
+          clause.add(getPredicateId(pNr, false));
+          clauses.add(clause);
+        }
+      }
+      // negative
+      for (Pair<Integer, List<Pair<Integer, Integer>>> pair : groundPreconditions.get(pNr + 1)) {
+        int oNr = pair.getLeft();
+        List<Pair<Integer, Integer>> paramList = pair.getRight();
+        {
+          // action implies precondition
+          List<Integer> clause = new ArrayList<>();
+          clause.add(-getOperatorId(oNr));
+          for (Pair<Integer, Integer> paramPos : paramList) {
+            Argument a = predicate.getArguments().get(paramPos.getLeft());
+            clause.add(-getParameterId(oNr, paramPos.getRight(), constantId.get(a)));
+          }
+          clause.add(-getPredicateId(pNr, false));
+          clauses.add(clause);
+        }
+      }
+      {
+        List<List<Integer>> frameAxioms = new ArrayList<>();
+        frameAxioms.add(new ArrayList<>());
+        // false -> true
+        frameAxioms.get(0).add(getPredicateId(pNr, false));
+        frameAxioms.get(0).add(-getPredicateId(pNr, true));
+        for (Pair<Integer, List<Pair<Integer, Integer>>> pair : groundEffects.get(pNr)) {
+          int oNr = pair.getLeft();
+          List<Pair<Integer, Integer>> paramList = pair.getRight();
+          {
+            // action implies effect
+            List<Integer> clause = new ArrayList<>();
+            clause.add(-getOperatorId(oNr));
+            for (Pair<Integer, Integer> paramPos : paramList) {
+              Argument a = predicate.getArguments().get(paramPos.getLeft());
+              clause.add(-getParameterId(oNr, paramPos.getRight(), constantId.get(a)));
+            }
+            clause.add(getPredicateId(pNr, true));
+            clauses.add(clause);
+          }
           {
             // prevent interference
-            for (Pair<Integer, List<Integer>> pair2 : groundPreconditions.get(pNr).get(1 - ispos)) {
-              int o2 = pair2.getLeft();
-              if (o == o2) {
+            for (Pair<Integer, List<Pair<Integer, Integer>>> pair2 : groundPreconditions.get(pNr + 1)) {
+              int oNr2 = pair2.getLeft();
+              if (oNr == oNr2) {
                 continue;
               }
-              List<Integer> paramList2 = pair2.getRight();
+              List<Pair<Integer, Integer>> paramList2 = pair2.getRight();
               if (paramList.size() != paramList2.size()) {
                 System.out.println("ERROR: Argument length not equal");
               }
               List<Integer> clause = new ArrayList<>();
-              clause.add(-getOperatorId(o));
-              clause.add(-getOperatorId(o2));
-              for (int pos = 0; pos < paramList.size(); pos++) {
-                Argument argument = predicate.getArguments().get(pos);
-                if (paramList.get(pos) > -1) {
-                  clause.add(-getParameterId(o, paramList.get(pos),
-                      constantsPerType.get(types.indexOf(argument.getType())).indexOf(argument)));
-                }
-                if (paramList2.get(pos) > -1) {
-                  clause.add(-getParameterId(o2, paramList2.get(pos),
-                      constantsPerType.get(types.indexOf(argument.getType())).indexOf(argument)));
-                }
+              clause.add(-getOperatorId(oNr));
+              clause.add(-getOperatorId(oNr2));
+              for (Pair<Integer, Integer> paramPos : paramList) {
+                Argument a = predicate.getArguments().get(paramPos.getLeft());
+                clause.add(-getParameterId(oNr, paramPos.getRight(), constantId.get(a)));
+              }
+              for (Pair<Integer, Integer> paramPos : paramList2) {
+                Argument a = predicate.getArguments().get(paramPos.getLeft());
+                clause.add(-getParameterId(oNr2, paramPos.getRight(), constantId.get(a)));
               }
               clauses.add(clause);
             }
           }
           {
             // frame axioms
+            List<List<Integer>> newFrameAxioms = new ArrayList<>();
+            for (int i = 0; i < frameAxioms.size(); i++) {
+              {
+                List<Integer> clause = new ArrayList<>(frameAxioms.get(i));
+                clause.add(getOperatorId(oNr));
+                newFrameAxioms.add(clause);
+              }
+              for (Pair<Integer, Integer> paramPos : paramList) {
+                Argument a = predicate.getArguments().get(paramPos.getLeft());
+                List<Integer> clause = new ArrayList<>(frameAxioms.get(i));
+                clause.add(getParameterId(oNr, paramPos.getRight(), constantId.get(a)));
+                newFrameAxioms.add(clause);
+              }
+            }
+            frameAxioms = newFrameAxioms;
           }
         }
+        clauses.addAll(frameAxioms);
+      }
+      {
+        List<List<Integer>> frameAxioms = new ArrayList<>();
+        frameAxioms.add(new ArrayList<>());
+        // true -> false
+        frameAxioms.get(0).add(-getPredicateId(pNr, false));
+        frameAxioms.get(0).add(getPredicateId(pNr, true));
+        for (Pair<Integer, List<Pair<Integer, Integer>>> pair : groundEffects.get(pNr + 1)) {
+          int oNr = pair.getLeft();
+          List<Pair<Integer, Integer>> paramList = pair.getRight();
+          {
+            // action implies effect
+            List<Integer> clause = new ArrayList<>();
+            clause.add(-getOperatorId(oNr));
+            for (Pair<Integer, Integer> paramPos : paramList) {
+              Argument a = predicate.getArguments().get(paramPos.getLeft());
+              clause.add(-getParameterId(oNr, paramPos.getRight(), constantId.get(a)));
+            }
+            clause.add(-getPredicateId(pNr, true));
+            clauses.add(clause);
+          }
+          {
+            // prevent interference
+            for (Pair<Integer, List<Pair<Integer, Integer>>> pair2 : groundPreconditions.get(pNr)) {
+              int oNr2 = pair2.getLeft();
+              if (oNr == oNr2) {
+                continue;
+              }
+              List<Pair<Integer, Integer>> paramList2 = pair2.getRight();
+              if (paramList.size() != paramList2.size()) {
+                System.out.println("ERROR: Argument length not equal");
+              }
+              List<Integer> clause = new ArrayList<>();
+              clause.add(-getOperatorId(oNr));
+              clause.add(-getOperatorId(oNr2));
+              for (Pair<Integer, Integer> paramPos : paramList) {
+                Argument a = predicate.getArguments().get(paramPos.getLeft());
+                clause.add(-getParameterId(oNr, paramPos.getRight(), constantId.get(a)));
+              }
+              for (Pair<Integer, Integer> paramPos : paramList2) {
+                Argument a = predicate.getArguments().get(paramPos.getLeft());
+                clause.add(-getParameterId(oNr2, paramPos.getRight(), constantId.get(a)));
+              }
+              clauses.add(clause);
+            }
+          }
+          {
+            // frame axioms
+            List<List<Integer>> newFrameAxioms = new ArrayList<>();
+            for (int i = 0; i < frameAxioms.size(); i++) {
+              {
+                List<Integer> clause = new ArrayList<>(frameAxioms.get(i));
+                clause.add(getOperatorId(oNr));
+                newFrameAxioms.add(clause);
+              }
+              for (Pair<Integer, Integer> paramPos : paramList) {
+                Argument a = predicate.getArguments().get(paramPos.getLeft());
+                List<Integer> clause = new ArrayList<>(frameAxioms.get(i));
+                clause.add(getParameterId(oNr, paramPos.getRight(), constantId.get(a)));
+                newFrameAxioms.add(clause);
+              }
+            }
+            frameAxioms = newFrameAxioms;
+          }
+        }
+        clauses.addAll(frameAxioms);
       }
     }
   }
 
-  protected List<Integer> getParamList(int oNr, Condition c) {
+  protected List<Pair<Integer, Integer>> getParamList(int oNr, Condition c) {
     Operator o = operators.get(oNr);
-    List<Integer> paramList = new ArrayList<>();
-    for (Argument a : c.getArguments()) {
-      if (a.isConstant()) {
-        paramList.add(-1);
-      } else {
-        paramList.add(o.getArguments().indexOf(a));
+    List<Pair<Integer, Integer>> paramList = new ArrayList<>();
+    for (int i = 0; i < c.getArguments().size(); i++) {
+      Argument a = c.getArguments().get(i);
+      if (!a.isConstant()) {
+        paramList.add(new Pair<>(i, o.getArguments().indexOf(a)));
       }
     }
     return paramList;
@@ -352,8 +406,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
     return result;
   }
 
-  protected int getPredicateId(int pNr) {
-    return pNr + 1;
+  protected int getPredicateId(int pNr, boolean nextStep) {
+    // even numbers are not negated, odd numbers are negated
+    return pNr + (nextStep ? stepVars : 0) + 1;
   }
 
   protected int getOperatorId(int oNr) {
@@ -364,39 +419,60 @@ public class LiftedSatPlanner extends LiftedPlanner {
     int id = predicates.size() + operators.size() + 1;
     Operator o = operators.get(oNr);
     for (int i = 0; i < oNr; i++) {
-      id += numParameters.get(i);
+      id += operatorParameters.get(i);
     }
     for (int i = 0; i < pos; i++) {
-      id += constantsPerType.get(types.indexOf(o.getArgumentTypes().get(i))).size();
+      id += constants.get(typeId.get(o.getArgumentTypes().get(i))).size();
     }
     id += cNr;
     return id;
   }
 
-  protected void addInitialState(PlanningProblem problem, Set<Condition> predicates, SatSolver solver) {
+  protected void addInitialState(SatSolver solver) {
     Set<Integer> allInitial = new HashSet<Integer>();
-    System.out.println("Initial state");
-    allInitial.addAll(problem.getInitialState().stream().map(c -> getPredicateId(c, 0)).collect(Collectors.toSet()));
-    for (int i = 1; i < predicateId.size() + 1; i++) {
+    allInitial.addAll(problem.getInitialState().stream().map(c -> predicateId.get(c)).collect(Collectors.toSet()));
+    for (int i = 0; i < predicates.size(); i += 2) {
       if (allInitial.contains(i)) {
-        solver.addClause(new int[] { i });
+        solver.addClause(new int[] { getPredicateId(i, false) });
       } else {
-        solver.addClause(new int[] { -i });
+        solver.addClause(new int[] { getPredicateId(i + 1, false) });
       }
     }
   }
 
+  protected void nextStep() {
+    for (List<Integer> clause : clauses) {
+      for (int i = 0; i < clause.size(); i++) {
+        clause.set(i, clause.get(i) + stepVars);
+      }
+    }
+  }
+
+  protected List<Integer> getGoal() {
+    if (problem.getGoals().size() != 1) {
+      System.out.println("ERROR: more than one goal");
+    }
+    List<Condition> goal = getFlatConditions(problem.getGoals().get(0));
+    List<Integer> goalClauses = new ArrayList<>();
+    for (Condition g : goal) {
+      goalClauses.add(getPredicateId(predicateId.get(g), false));
+    }
+    return goalClauses;
+  }
+
   protected PlanningProblem problem;
 
-  protected List<Argument> constants;
   protected List<Condition> predicates;
+  protected Map<Condition, Integer> predicateId;
   protected List<Operator> operators;
-  protected List<Type> types;
-  protected List<List<Argument>> constantsPerType;
+  protected Map<Operator, Integer> operatorId;
+  protected Map<Type, Integer> typeId;
+  protected List<List<Argument>> constants;
+  protected Map<Argument, Integer> constantId;
 
-  protected List<Integer> numParameters;
-  protected List<List<List<Pair<Integer, List<Integer>>>>> groundPreconditions;
-  protected List<List<List<Pair<Integer, List<Integer>>>>> groundEffects;
+  protected List<Integer> operatorParameters;
+  protected List<List<Pair<Integer, List<Pair<Integer, Integer>>>>> groundPreconditions;
+  protected List<List<Pair<Integer, List<Pair<Integer, Integer>>>>> groundEffects;
   protected List<List<Integer>> clauses;
   protected int stepVars;
 }
