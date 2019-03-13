@@ -104,37 +104,59 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   protected void setIDs() {
-    int count;
-    typeId = new HashMap<>();
-    count = 0;
+    types = new ArrayList<>();
     for (Argument a : problem.getConstants()) {
-      if (!typeId.containsKey(a.getType())) {
-        typeId.put(a.getType(), count);
+      if (!types.contains(a.getType())) {
+        types.add(a.getType());
         constantsPerType.add(new ArrayList<>());
-        count++;
       }
-      constantsPerType.get(typeId.get(a.getType())).add(a);
+      constantsPerType.get(types.indexOf(a.getType())).add(a);
     }
-    posEffects = new ArrayList<>();
-    negEffects = new ArrayList<>();
+    groundPreconditions = new ArrayList<>();
+    groundEffects = new ArrayList<>();
     for (int i = 0; i < predicates.size(); i++) {
-      posEffects.add(new ArrayList<>());
-      negEffects.add(new ArrayList<>());
+      groundPreconditions.add(new ArrayList<>());
+      groundPreconditions.add(new ArrayList<>());
+      groundEffects.add(new ArrayList<>());
+      groundEffects.add(new ArrayList<>());
+      if (predicates.get(i).isNegated()) {
+        System.out.println("ERROR: Not negated predicate in plan graph");
+      }
     }
     numParameters = new ArrayList<>();
-    for (Operator o : operators) {
-      numParameters.add(o.getArgumentTypes().stream().map(t -> constantsPerType.get(typeId.get(t)).size()).reduce(0,
-          (x, y) -> x + y));
-      List<Condition> effects = getFlatConditions(o.getEffect());
-      for (Condition c : effects) {
-        List<Integer> paramList = new ArrayList<>();
-        paramList.add(operators.indexOf(o));
-        paramList.addAll(getParamList(o, c));
-        for (Condition gc : groundPredicate(c)) {
-          if (gc.isNegated()) {
-            negEffects.get(predicates.indexOf(gc)).add(paramList);
+    for (int i = 0; i < operators.size(); i++) {
+      Operator operator = operators.get(i);
+      numParameters
+          .add(operator.getArgumentTypes().stream().mapToInt(t -> constantsPerType.get(types.indexOf(t)).size()).sum());
+      {
+        List<Condition> effects = getFlatConditions(operator.getEffect());
+        for (Condition c : effects) {
+          List<Integer> paramList = getParamList(i, c);
+          Set<Condition> groundConditions = groundPredicate(c);
+          if (c.isNegated()) {
+            for (Condition gc : groundPredicate(c)) {
+              groundEffects.get(predicates.indexOf(gc.withoutNegation())).get(1).add(new Pair<>(i, paramList));
+            }
           } else {
-            posEffects.get(predicates.indexOf(gc)).add(paramList);
+            for (Condition gc : groundPredicate(c)) {
+              groundEffects.get(predicates.indexOf(gc)).get(0).add(new Pair<>(i, paramList));
+            }
+          }
+        }
+      }
+      {
+        List<Condition> preconditions = getFlatConditions(operator.getPrecondition());
+        for (Condition c : preconditions) {
+          List<Integer> paramList = getParamList(i, c);
+          Set<Condition> groundConditions = groundPredicate(c);
+          if (c.isNegated()) {
+            for (Condition gc : groundPredicate(c)) {
+              groundPreconditions.get(predicates.indexOf(gc.withoutNegation())).get(1).add(new Pair<>(i, paramList));
+            }
+          } else {
+            for (Condition gc : groundPredicate(c)) {
+              groundPreconditions.get(predicates.indexOf(gc)).get(0).add(new Pair<>(i, paramList));
+            }
           }
         }
       }
@@ -145,30 +167,26 @@ public class LiftedSatPlanner extends LiftedPlanner {
     clauses = new ArrayList<>();
     for (int oNr = 0; oNr < operators.size(); oNr++) {
       Operator operator = operators.get(oNr);
-      for (int i = 0; i < operator.getArguments().size(); i++) {
-        Argument argument = operator.getArguments().get(i);
-        List<Argument> constants = constantsPerType.get(typeId.get(argument.getType()));
+      for (int pos = 0; pos < operator.getArguments().size(); pos++) {
+        Argument argument = operator.getArguments().get(pos);
+        List<Argument> constants = constantsPerType.get(types.indexOf(argument.getType()));
         {
           // Operator -> each parameter
           List<Integer> clause = new ArrayList<>();
-          clause.add(-getOperatorId(operator));
-          for (Argument c : constants) {
-            clause.add(getParameterId(operator, i, c));
+          clause.add(-getOperatorId(oNr));
+          for (int cNr = 0; cNr < constants.size(); cNr++) {
+            clause.add(getParameterId(oNr, pos, cNr));
           }
           clauses.add(clause);
         }
         {
-          // AtMostOne Const per Parameter
-          for (Argument c1 : constants) {
-            for (Argument c2 : constants) {
-              int id1 = getParameterId(operator, i, c1);
-              int id2 = getParameterId(operator, i, c2);
-              if (id1 < id2) {
-                List<Integer> clause = new ArrayList<>();
-                clause.add(-id1);
-                clause.add(-id2);
-                clauses.add(clause);
-              }
+          // <=1 per Parameter
+          for (int c1 = 0; c1 < constants.size(); c1++) {
+            for (int c2 = c1 + 1; c2 < constants.size(); c2++) {
+              List<Integer> clause = new ArrayList<>();
+              clause.add(-getParameterId(oNr, pos, c1));
+              clause.add(-getParameterId(oNr, pos, c2));
+              clauses.add(clause);
             }
           }
         }
@@ -180,7 +198,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
           List<Integer> paramList = getParamList(operator, c);
           for (Condition gc : groundPredicate(c)) {
             List<Integer> clause = new ArrayList<>();
-            clause.add(-getOperatorId(operator));
+            clause.add(-getOperatorId(oNr));
             for (int i = 0; i < paramList.size(); i++) {
               if (paramList.get(i) > -1) {
                 clause.add(-getParameterId(operator, paramList.get(i), gc.getArguments().get(i)));
@@ -207,14 +225,14 @@ public class LiftedSatPlanner extends LiftedPlanner {
           List<Integer> paramList = getParamList(operator, c);
           for (Condition gc : groundPredicate(c)) {
             List<Integer> clause = new ArrayList<>();
-            clause.add(-getOperatorId(operator));
+            clause.add(-getOperatorId(oNr));
             for (int i = 0; i < paramList.size(); i++) {
               if (paramList.get(i) > -1) {
                 clause.add(-getParameterId(operator, paramList.get(i), gc.getArguments().get(i)));
               }
             }
             if (predicates.contains(gc)) {
-              clause.add((gc.isNegated() ? -1 : 1) * getPredicateId(gc));
+              clause.add((gc.isNegated() ? -1 : 1) * (getPredicateId(gc) + stepVars));
               clauses.add(clause);
             } else {
               if (gc.isNegated()) {
@@ -264,18 +282,57 @@ public class LiftedSatPlanner extends LiftedPlanner {
         }
       }
     }
-    {
-      // Frame axioms
+    for (int pNr = 0; pNr < predicates.size(); pNr++) {
+      Condition predicate = predicates.get(pNr);
+
+      for (int ispos = 0; ispos < 2; ispos++) {
+        for (Pair<Integer, List<Integer>> pair : groundEffects.get(pNr).get(ispos)) {
+          int o = pair.getLeft();
+          List<Integer> paramList = pair.getRight();
+          {
+            // prevent interference
+            for (Pair<Integer, List<Integer>> pair2 : groundPreconditions.get(pNr).get(1 - ispos)) {
+              int o2 = pair2.getLeft();
+              if (o == o2) {
+                continue;
+              }
+              List<Integer> paramList2 = pair2.getRight();
+              if (paramList.size() != paramList2.size()) {
+                System.out.println("ERROR: Argument length not equal");
+              }
+              List<Integer> clause = new ArrayList<>();
+              clause.add(-getOperatorId(o));
+              clause.add(-getOperatorId(o2));
+              for (int pos = 0; pos < paramList.size(); pos++) {
+                Argument argument = predicate.getArguments().get(pos);
+                if (paramList.get(pos) > -1) {
+                  clause.add(-getParameterId(o, paramList.get(pos),
+                      constantsPerType.get(types.indexOf(argument.getType())).indexOf(argument)));
+                }
+                if (paramList2.get(pos) > -1) {
+                  clause.add(-getParameterId(o2, paramList2.get(pos),
+                      constantsPerType.get(types.indexOf(argument.getType())).indexOf(argument)));
+                }
+              }
+              clauses.add(clause);
+            }
+          }
+          {
+            // frame axioms
+          }
+        }
+      }
     }
   }
 
-  protected List<Integer> getParamList(Operator operator, Condition c) {
+  protected List<Integer> getParamList(int oNr, Condition c) {
+    Operator o = operators.get(oNr);
     List<Integer> paramList = new ArrayList<>();
     for (Argument a : c.getArguments()) {
       if (a.isConstant()) {
         paramList.add(-1);
       } else {
-        paramList.add(operator.getArguments().indexOf(a));
+        paramList.add(o.getArguments().indexOf(a));
       }
     }
     return paramList;
@@ -295,23 +352,24 @@ public class LiftedSatPlanner extends LiftedPlanner {
     return result;
   }
 
-  protected int getPredicateId(Condition cond) {
-    return predicates.indexOf(cond) + 1;
+  protected int getPredicateId(int pNr) {
+    return pNr + 1;
   }
 
-  protected int getOperatorId(Operator operator) {
-    return predicates.size() + operators.indexOf(operator) + 1;
+  protected int getOperatorId(int oNr) {
+    return predicates.size() + oNr + 1;
   }
 
-  protected int getParameterId(Operator operator, int pos, Argument constant) {
+  protected int getParameterId(int oNr, int pos, int cNr) {
     int id = predicates.size() + operators.size() + 1;
-    for (int i = 0; i < operators.indexOf(operator); i++) {
+    Operator o = operators.get(oNr);
+    for (int i = 0; i < oNr; i++) {
       id += numParameters.get(i);
     }
     for (int i = 0; i < pos; i++) {
-      id += constantsPerType.get(typeId.get(operator.getArgumentTypes().get(i))).size();
+      id += constantsPerType.get(types.indexOf(o.getArgumentTypes().get(i))).size();
     }
-    id += constantsPerType.get(typeId.get(constant.getType())).indexOf(constant);
+    id += cNr;
     return id;
   }
 
@@ -329,13 +387,16 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   protected PlanningProblem problem;
+
+  protected List<Argument> constants;
   protected List<Condition> predicates;
   protected List<Operator> operators;
-  protected Map<Type, Integer> typeId;
+  protected List<Type> types;
   protected List<List<Argument>> constantsPerType;
+
   protected List<Integer> numParameters;
-  protected List<List<List<Integer>>> negEffects;
-  protected List<List<List<Integer>>> posEffects;
+  protected List<List<List<Pair<Integer, List<Integer>>>>> groundPreconditions;
+  protected List<List<List<Pair<Integer, List<Integer>>>>> groundEffects;
   protected List<List<Integer>> clauses;
   protected int stepVars;
 }
