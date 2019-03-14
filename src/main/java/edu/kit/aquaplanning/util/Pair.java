@@ -30,4 +30,9 @@ public class Pair<A, B> {
 	public B getRight() {
 		return right;
 	}
+
+    @Override
+    public String toString() {
+      return "( " + left.toString() + ", " + right.toString() + " )";
+    }
 }

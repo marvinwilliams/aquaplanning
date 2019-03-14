@@ -390,7 +390,7 @@ public abstract class BaseGrounder implements Grounder {
 	 * Assemble an Action object out of an operator 
 	 * whose arguments are fully replaced by constants.
 	 */
-	protected Action getAction(Operator liftedAction) {
+	public Action getAction(Operator liftedAction) {
 		
 		Action action = null;
 		
