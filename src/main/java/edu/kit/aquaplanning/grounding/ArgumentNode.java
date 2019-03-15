@@ -25,6 +25,7 @@ public class ArgumentNode {
   private Map<Integer, ArgumentNode> children;
 
   private boolean isLeafNode;
+  private boolean isVar;
 
   /**
    * Creates an empty argument node. Requires a map containing an ID of each
@@ -32,6 +33,7 @@ public class ArgumentNode {
    */
   public ArgumentNode(Map<String, Integer> argumentIds) {
     this.argumentIds = argumentIds;
+    this.isVar = false;
     this.children = new HashMap<>();
   }
 
@@ -68,6 +70,10 @@ public class ArgumentNode {
       if (arg == null || !arg.isConstant()) {
         add(args, argPos + 1);
       } else {
+        if (!arg.isConstant()) {
+          System.out.println("Not grounded: " + arg);
+        }
+        isVar = !arg.isConstant();
         int argId = argumentIds.get(args.get(argPos).getName());
         if (!children.containsKey(argId)) {
           children.put(argId, new ArgumentNode(argumentIds));
@@ -89,7 +95,7 @@ public class ArgumentNode {
     } else {
       // Check if the next argument is contained
       Argument arg = args.get(argPos);
-      if (arg == null || !arg.isConstant()) {
+      if (arg == null || !arg.isConstant() || isVar) {
         return contains(args, argPos + 1);
       } else {
         String argName = args.get(argPos).getName();

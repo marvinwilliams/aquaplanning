@@ -34,7 +34,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
   public Plan findPlan(PlanningProblem p) {
     problem = p;
     RelaxedPlanningGraphGrounder grounder = new RelaxedPlanningGraphGrounder(config);
-    RelaxedPlanningGraph graph = grounder.initGrounding(problem, (o, a) -> a.getName().startsWith("?v"));
+    RelaxedPlanningGraph graph = grounder.initGrounding(problem, (o, a) -> a.getName().startsWith("?r"));
     grounder.ground(problem);
     stepVars = 0;
     predicates = new ArrayList<>();
@@ -82,24 +82,28 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
     addInitialState(solver);
     goal = getGoal();
+    satGoal = new int[goal.size()];
+    for (int i = 0; i < goal.size(); i++) {
+      satGoal[i] = goal.get(i);
+    }
+    satClauses = new ArrayList<>();
+    for (List<Integer> clause : clauses) {
+      int[] tmp = new int[clause.size()];
+      for (int i = 0; i < clause.size(); i++) {
+        tmp[i] = clause.get(i);
+      }
+      satClauses.add(tmp);
+    }
     int step = 0;
 
     while (true) {
-      int[] assumptions = new int[goal.size()];
-      for (int i = 0; i < goal.size(); i++) {
-        assumptions[i] = goal.get(i);
-      }
-      if (solver.isSatisfiable(assumptions)) {
+      if (solver.isSatisfiable(satGoal)) {
         System.out.println("Solution found in step " + step);
         break;
       }
       System.out.println("No solution found in step " + step);
-      for (List<Integer> clause : clauses) {
-        int[] tmp = new int[clause.size()];
-        for (int i = 0; i < clause.size(); i++) {
-          tmp[i] = clause.get(i);
-        }
-        solver.addClause(tmp);
+      for (int[] clause : satClauses) {
+        solver.addClause(clause);
       }
       nextStep();
       step++;
@@ -117,10 +121,10 @@ public class LiftedSatPlanner extends LiftedPlanner {
           for (int j = 0; j < o.getArguments().size(); j++) {
             Argument a = o.getArguments().get(j);
             boolean found = false;
-            for (int k = 0; k < constants.get(typeId.get(a.getType())).size(); k++) {
+            for (int k = 0; k < getConstants(a).size(); k++) {
               if (model[getParameterId(i, j, k) + s * stepVars] >= 0) {
-                args.add(constants.get(typeId.get(a.getType())).get(k));
-                System.out.print(" " + j + ": " + constants.get(typeId.get(a.getType())).get(k));
+                args.add(getConstants(a).get(k));
+                System.out.print(" " + j + ": " + getConstants(a).get(k));
                 found = true;
                 break;
               }
@@ -188,7 +192,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
     for (int oNr = 0; oNr < operators.size(); oNr++) {
       System.out.println("Operator " + oNr);
       Operator operator = operators.get(oNr);
-      int numParameters = operator.getArgumentTypes().stream().mapToInt(t -> constants.get(typeId.get(t)).size()).sum();
+      System.out.println(operator);
+      int numParameters = operator.getArguments().stream().mapToInt(a -> getConstants(a).size()).sum();
       operatorParameters.add(numParameters);
       System.out.println("\t #Parameters: " + numParameters);
       stepVars += numParameters;
@@ -245,7 +250,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       System.out.println("Operator " + oNr);
       for (int pos = 0; pos < operator.getArguments().size(); pos++) {
         Argument argument = operator.getArguments().get(pos);
-        List<Argument> argumentConstants = constants.get(typeId.get(argument.getType()));
+        List<Argument> argumentConstants = getConstants(argument);
         {
           // Operator -> each parameter
           System.out.print("\timplies " + argument + ": ");
@@ -500,8 +505,19 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   protected int getPredicateId(int pNr, boolean nextStep) {
-    // even numbers are not negated, odd numbers are negated
     return pNr + (nextStep ? stepVars : 0) + 1;
+  }
+
+  protected List<Argument> getConstants(Argument argument) {
+    if (argument.isConstant()) {
+      System.out.println("ERROR: argument is const");
+    }
+    int id = typeId.getOrDefault(argument.getType(), -1);
+    if (id > -1) {
+      return constants.get(id);
+    } else {
+      return new ArrayList<Argument>();
+    }
   }
 
   protected int getOperatorId(int oNr) {
@@ -515,7 +531,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       id += operatorParameters.get(i);
     }
     for (int i = 0; i < pos; i++) {
-      id += constants.get(typeId.get(o.getArgumentTypes().get(i))).size();
+      id += getConstants(o.getArguments().get(i)).size();
     }
     id += cNr;
     return id;
@@ -534,20 +550,20 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   protected void nextStep() {
-    for (List<Integer> clause : clauses) {
-      for (int i = 0; i < clause.size(); i++) {
-        if (clause.get(i) > 0) {
-          clause.set(i, clause.get(i) + stepVars);
+    for (int[] clause : satClauses) {
+      for (int i = 0; i < clause.length; i++) {
+        if (clause[i] > 0) {
+          clause[i] += stepVars;
         } else {
-          clause.set(i, clause.get(i) - stepVars);
+          clause[i] -= stepVars;
         }
       }
     }
-    for (int i = 0; i < goal.size(); i++) {
-      if (goal.get(i) > 0) {
-        goal.set(i, goal.get(i) + stepVars);
+    for (int i = 0; i < satGoal.length; i++) {
+      if (satGoal[i] > 0) {
+        satGoal[i] += stepVars;
       } else {
-        goal.set(i, goal.get(i) - stepVars);
+        satGoal[i] -= stepVars;
       }
     }
   }
@@ -556,9 +572,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
     if (problem.getGoals().size() != 1) {
       System.out.println("ERROR: more than one goal");
     }
-    List<Condition> goal = getFlatConditions(problem.getGoals().get(0));
+    List<Condition> goalConditions = getFlatConditions(problem.getGoals().get(0));
     List<Integer> goalClauses = new ArrayList<>();
-    for (Condition g : goal) {
+    for (Condition g : goalConditions) {
       goalClauses.add(getPredicateId(predicateId.get(g), false));
     }
     return goalClauses;
@@ -579,6 +595,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
   protected List<List<Pair<Integer, List<Pair<Integer, Integer>>>>> groundEffects;
   protected List<Pair<Integer, List<Pair<Integer, Integer>>>> forbidden;
   protected List<List<Integer>> clauses;
+  protected List<int[]> satClauses;
   protected List<Integer> goal;
+  protected int[] satGoal;
   protected int stepVars;
 }
