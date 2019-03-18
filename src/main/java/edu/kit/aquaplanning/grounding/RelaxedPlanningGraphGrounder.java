@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiPredicate;
 
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.model.ground.Action;
@@ -34,7 +33,12 @@ public class RelaxedPlanningGraphGrounder extends BaseGrounder {
     super(config);
   }
 
-  public RelaxedPlanningGraph initGrounding(PlanningProblem problem, BiPredicate<Operator, Argument> isGrounded) {
+  /**
+   * Grounds the entire problem.
+   */
+  @Override
+  public GroundPlanningProblem ground(PlanningProblem problem) {
+
     setProblem(problem);
 
     // First, preprocess the problem into a standardized structure
@@ -64,16 +68,10 @@ public class RelaxedPlanningGraphGrounder extends BaseGrounder {
     }
 
     // Traverse delete-relaxed state space
-    RelaxedPlanningGraph graph = new RelaxedPlanningGraph(problem, isGrounded);
+    RelaxedPlanningGraph graph = new RelaxedPlanningGraph(problem);
     while (graph.hasNextLayer()) {
       graph.computeNextLayer();
     }
-    return graph;
-  }
-
-  public GroundPlanningProblem ground(PlanningProblem problem, BiPredicate<Operator, Argument> isGrounded) {
-
-    RelaxedPlanningGraph graph = initGrounding(problem, isGrounded);
 
     // Generate action objects
     Logger.log(Logger.INFO_V, "Generating ground action objects ...");
@@ -117,13 +115,5 @@ public class RelaxedPlanningGraphGrounder extends BaseGrounder {
     GroundPlanningProblem planningProblem = new GroundPlanningProblem(initialState, actions, goal,
         problem.hasActionCosts(), extractAtomNames(), extractNumericAtomNames());
     return planningProblem;
-  }
-
-  /**
-   * Grounds the entire problem.
-   */
-  @Override
-  public GroundPlanningProblem ground(PlanningProblem problem) {
-    return ground(problem, (o, a) -> true);
   }
 }

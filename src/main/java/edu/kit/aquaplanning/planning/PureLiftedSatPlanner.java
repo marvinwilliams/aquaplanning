@@ -1,22 +1,23 @@
 package edu.kit.aquaplanning.planning;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
+import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 
 import edu.kit.aquaplanning.Configuration;
-import edu.kit.aquaplanning.grounding.RelaxedPlanningGraph;
-import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
-import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
+import edu.kit.aquaplanning.grounding.Preprocessor;
 import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
+import edu.kit.aquaplanning.model.lifted.Predicate;
 import edu.kit.aquaplanning.model.lifted.Type;
 import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition;
 import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
@@ -25,57 +26,17 @@ import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
 import edu.kit.aquaplanning.sat.SatSolver;
 import edu.kit.aquaplanning.util.Pair;
 
-public class LiftedSatPlanner extends LiftedPlanner {
+public class PureLiftedSatPlanner extends LiftedPlanner {
 
-  public LiftedSatPlanner(Configuration config) {
+  public PureLiftedSatPlanner(Configuration config) {
     super(config);
   }
 
   @Override
   public Plan findPlan(PlanningProblem p) {
     problem = p;
-    RelaxedPlanningGraphGrounder grounder = new RelaxedPlanningGraphGrounder(config);
-    GroundPlanningProblem graph = grounder.ground(problem);
-    grounder.ground(problem);
-    stepVars = 0;
-    predicates = new ArrayList<>();
-    predicateId = new HashMap<>();
-    groundPreconditions = new ArrayList<>();
-    groundEffects = new ArrayList<>();
-    System.out.println("Constants:");
-    System.out.println(problem.getConstants());
-    System.out.println("Lifted predicates:");
-    System.out.println(graph.getLiftedState(graph.getCurrentLayer()));
-    for (Condition c : graph.getLiftedState(graph.getCurrentLayer())) {
-      if (c.isNegated()) {
-        System.out.println("ERROR: predicate in plangraph negated");
-        c = c.withoutNegation();
-      }
-      for (Condition gc : groundPredicate(c)) {
-        if (predicateId.containsKey(gc)) {
-          continue;
-        }
-        predicates.add(gc);
-        predicateId.put(gc, predicates.size() - 1);
-        gc = gc.withoutNegation();
-        gc.setNegated(true);
-        predicateId.put(gc, predicates.size() - 1);
-        groundPreconditions.add(new ArrayList<>());
-        groundPreconditions.add(new ArrayList<>());
-        groundEffects.add(new ArrayList<>());
-        groundEffects.add(new ArrayList<>());
-        stepVars++;
-      }
-    }
-    System.out.println("Grounded predicates:");
-    System.out.println(predicates);
-    operators = graph.getLiftedActions();
-    stepVars += operators.size();
-    for (Operator o : operators) {
-      o.removeConstantArguments();
-    }
-    System.out.println("Operators:");
-    System.out.println(operators);
+    new Preprocessor(config).preprocess(problem);
+    isGrounded = (o, a) -> a.getName().startsWith("?g_");
     setIDs();
     generateClauses();
     // initialize the SAT solver
@@ -145,28 +106,68 @@ public class LiftedSatPlanner extends LiftedPlanner {
     return plan;
   }
 
-  protected Set<Condition> groundPredicate(Condition predicate) {
+  protected Set<Condition> groundCondition(Condition condition) {
     Set<Condition> result = new HashSet<>();
-    Stack<Condition> work = new Stack<Condition>();
-    work.add(predicate);
+    Stack<List<Argument>> work = new Stack<>();
+    int numParameters = condition.getNumArgs();
+    work.push(new ArrayList<>(condition.getArguments()));
     while (!work.isEmpty()) {
-      Condition first = work.pop();
+      List<Argument> first = work.pop();
       int groundPos = -1;
-      for (int i = 0; i < first.getNumArgs(); i++) {
-        if (!first.getArguments().get(i).isConstant()) {
+      for (int i = 0; i < numParameters; i++) {
+        if (!first.get(i).isConstant()) {
           groundPos = i;
           break;
         }
       }
       if (groundPos == -1) {
-        result.add(first);
-        continue;
+        Condition c = condition.copy();
+        for (int i = 0; i < numParameters; i++) {
+          c.getArguments().set(i, first.get(i));
+        }
+        result.add(c);
+      } else {
+        for (Argument a : getConstants(first.get(groundPos))) {
+          List<Argument> newList = new ArrayList<>(first);
+          newList.set(groundPos, a);
+          work.push(newList);
+        }
       }
-      for (Argument a : problem.getConstants()) {
-        if (problem.isArgumentOfType(a, first.getArguments().get(groundPos).getType())) {
-          Condition copy = first.copy();
-          copy.getArguments().set(groundPos, a);
-          work.push(copy);
+    }
+    return result;
+  }
+
+  protected Set<Operator> groundOperator(Operator operator) {
+    Set<Operator> result = new HashSet<>();
+    Stack<List<Argument>> work = new Stack<>();
+    int numParameters = operator.getArguments().size();
+    work.push(Arrays.asList(new Argument[numParameters]));
+    List<Integer> groundPositions = new ArrayList<>();
+    List<List<Argument>> groundArguments = new ArrayList<>();
+    for (int i = 0; i < numParameters; i++) {
+      if (isGrounded.test(operator, operator.getArguments().get(i))) {
+        groundPositions.add(i);
+        groundArguments.add(getConstants(operator.getArguments().get(i)));
+      }
+    }
+    while (!work.isEmpty()) {
+      List<Argument> first = work.pop();
+      int groundPos = -1;
+      for (int i = 0; i < groundPositions.size(); i++) {
+        if (first.get(groundPositions.get(i)) == null) {
+          groundPos = i;
+          break;
+        }
+      }
+      if (groundPos == -1) {
+        Operator o = operator.getOperatorWithGroundArguments(first);
+        o.removeConstantArguments();
+        result.add(o);
+      } else {
+        for (Argument a : groundArguments.get(groundPos)) {
+          List<Argument> newList = new ArrayList<>(first);
+          newList.set(groundPositions.get(groundPos), a);
+          work.push(newList);
         }
       }
     }
@@ -174,6 +175,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   protected void setIDs() {
+    stepVars = 0;
+
     typeId = new HashMap<>();
     constants = new ArrayList<>();
     constantId = new HashMap<>();
@@ -185,63 +188,88 @@ public class LiftedSatPlanner extends LiftedPlanner {
         constants.add(new ArrayList<>());
       }
       int id = typeId.get(a.getType());
-      constants.get(id).add(a);
-      constantId.put(a, constants.get(id).size() - 1);
+      getConstants(a).add(a);
+      constantId.put(a, getConstants(a).size() - 1);
     }
+    System.out.println("Constants:");
+    System.out.println(constants);
+
+    System.out.println("Predicates:");
+    System.out.println(problem.getPredicates().values());
+    predicates = new ArrayList<>();
+    predicateId = new HashMap<>();
+    preconditions = new ArrayList<>();
+    effects = new ArrayList<>();
+    for (Predicate p : problem.getPredicates().values()) {
+      Condition condition = new Condition(p);
+      for (Condition c : groundCondition(condition)) {
+        int pNr = predicates.size();
+        predicates.add(c);
+        predicateId.put(c, pNr);
+        Condition neg = c.withoutNegation();
+        neg.setNegated(true);
+        predicateId.put(neg, pNr);
+        preconditions.add(new ArrayList<>());
+        preconditions.add(new ArrayList<>());
+        effects.add(new ArrayList<>());
+        effects.add(new ArrayList<>());
+      }
+    }
+
+    operators = new ArrayList<>();
+    operatorId = new HashMap<>();
     operatorParameters = new ArrayList<>();
-    forbidden = new ArrayList<>();
-    for (int oNr = 0; oNr < operators.size(); oNr++) {
-      System.out.println("Operator " + oNr);
-      Operator operator = operators.get(oNr);
+    for (Operator operator : problem.getOperators()) {
+      System.out.println("Lifted Operator:");
       System.out.println(operator);
-      int numParameters = operator.getArguments().stream().mapToInt(a -> getConstants(a).size()).sum();
-      operatorParameters.add(numParameters);
-      System.out.println("\t #Parameters: " + numParameters);
-      stepVars += numParameters;
-      {
-        List<Condition> preconditions = getFlatConditions(operator.getPrecondition());
-        for (Condition c : preconditions) {
-          System.out.println("\tPrecondition " + c);
-          List<Pair<Integer, Integer>> paramList = getParamList(oNr, c);
-          System.out.println("\t\tParameter mapping: " + paramList);
-          for (Condition gc : groundPredicate(c)) {
-            if (predicateId.containsKey(gc)) {
-              groundPreconditions.get(predicateId.get(gc) * 2 + (gc.isNegated() ? 1 : 0))
-                  .add(new Pair<>(oNr, paramList));
-            } else {
-              List<Pair<Integer, Integer>> forbiddenAssignment = new ArrayList<>();
-              for (Pair<Integer, Integer> paramPos : paramList) {
-                forbiddenAssignment
-                    .add(new Pair<>(paramPos.getRight(), constantId.get(gc.getArguments().get(paramPos.getLeft()))));
+      Set<Operator> groundedOperators = groundOperator(operator);
+      for (Operator o : groundOperator(operator)) {
+        int oNr = operatorId.size();
+        System.out.println("Grounded Operator:");
+        System.out.println(o);
+        operators.add(o);
+        operatorId.put(o, oNr);
+        int numParameters = o.getArguments().stream().mapToInt(a -> getConstants(a).size()).sum();
+        operatorParameters.add(numParameters);
+        stepVars += numParameters;
+        List<Condition> flatPreconditions = getFlatConditions(o.getPrecondition());
+        {
+          for (Condition c : flatPreconditions) {
+            System.out.println("\tPrecondition " + c);
+            List<Integer> paramList = getParamList(oNr, c);
+            System.out.println("\t\tParameter mapping: " + paramList);
+            for (Condition gc : groundCondition(c)) {
+              if (predicateId.containsKey(gc)) {
+                preconditions.get(predicateId.get(gc) * 2 + (gc.isNegated() ? 1 : 0)).add(new Pair<>(oNr, paramList));
+              } else {
+                System.out.println("ERROR: Precondition not in list");
               }
-              forbidden.add(new Pair<>(oNr, forbiddenAssignment));
+            }
+          }
+        }
+        {
+          List<Condition> flatEffects = getFlatConditions(o.getEffect());
+          for (Condition c : flatEffects) {
+            System.out.println("\tEffect " + c);
+            List<Integer> paramList = getParamList(oNr, c);
+            System.out.println("\t\tParameter mapping: " + paramList);
+            for (Condition gc : groundCondition(c)) {
+              if (predicateId.containsKey(gc)) {
+                effects.get(predicateId.get(gc) * 2 + (gc.isNegated() ? 1 : 0)).add(new Pair<>(oNr, paramList));
+              } else {
+                System.out.println("ERROR: Effect not in list");
+              }
             }
           }
         }
       }
-      {
-        List<Condition> effects = getFlatConditions(operator.getEffect());
-        for (Condition c : effects) {
-          System.out.println("\tEffect " + c);
-          List<Pair<Integer, Integer>> paramList = getParamList(oNr, c);
-          System.out.println("\t\tParameter mapping: " + paramList);
-          for (Condition gc : groundPredicate(c)) {
-            if (predicateId.containsKey(gc)) {
-              groundEffects.get(predicateId.get(gc) * 2 + (gc.isNegated() ? 1 : 0)).add(new Pair<>(oNr, paramList));
-            } else {
-              List<Pair<Integer, Integer>> forbiddenAssignment = new ArrayList<>();
-              for (Pair<Integer, Integer> paramPos : paramList) {
-                forbiddenAssignment
-                    .add(new Pair<>(paramPos.getRight(), constantId.get(gc.getArguments().get(paramPos.getLeft()))));
-              }
-              forbidden.add(new Pair<>(oNr, forbiddenAssignment));
-            }
-          }
-        }
-      }
+      stepVars += groundedOperators.size();
     }
-    System.out.println("GroundPreconditions: " + groundPreconditions);
-    System.out.println("GroundEffects: " + groundEffects);
+    System.out.println("Grounded Operators:");
+    System.out.println(operators);
+
+    System.out.println("Preconditions: " + preconditions);
+    System.out.println("Effects: " + effects);
   }
 
   protected void generateClauses() {
@@ -476,14 +504,12 @@ public class LiftedSatPlanner extends LiftedPlanner {
     }
   }
 
-  protected List<Pair<Integer, Integer>> getParamList(int oNr, Condition c) {
+  protected List<Integer> getParamList(int oNr, Condition c) {
     Operator o = operators.get(oNr);
-    List<Pair<Integer, Integer>> paramList = new ArrayList<>();
+    List<Integer> paramList = new ArrayList<>();
     for (int i = 0; i < c.getArguments().size(); i++) {
       Argument a = c.getArguments().get(i);
-      if (!a.isConstant()) {
-        paramList.add(new Pair<>(i, o.getArguments().indexOf(a)));
-      }
+      paramList.add(a.isConstant() ? -1 : o.getArguments().indexOf(a));
     }
     return paramList;
   }
@@ -510,9 +536,6 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   protected List<Argument> getConstants(Argument argument) {
-    if (argument.isConstant()) {
-      System.out.println("ERROR: argument is const");
-    }
     int id = typeId.getOrDefault(argument.getType(), -1);
     if (id > -1) {
       return constants.get(id);
@@ -583,21 +606,21 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   protected PlanningProblem problem;
 
+  protected Map<Type, Integer> typeId;
+  protected List<List<Argument>> constants;
+  protected Map<Argument, Integer> constantId;
   protected List<Condition> predicates;
   protected Map<Condition, Integer> predicateId;
   protected List<Operator> operators;
   protected Map<Operator, Integer> operatorId;
-  protected Map<Type, Integer> typeId;
-  protected List<List<Argument>> constants;
-  protected Map<Argument, Integer> constantId;
 
   protected List<Integer> operatorParameters;
-  protected List<List<Pair<Integer, List<Pair<Integer, Integer>>>>> groundPreconditions;
-  protected List<List<Pair<Integer, List<Pair<Integer, Integer>>>>> groundEffects;
-  protected List<Pair<Integer, List<Pair<Integer, Integer>>>> forbidden;
-  protected List<List<Integer>> clauses;
-  protected List<int[]> satClauses;
-  protected List<Integer> goal;
-  protected int[] satGoal;
+  protected List<List<Pair<Integer, List<Integer>>>> preconditions;
+  protected List<List<Pair<Integer, List<Integer>>>> effects;
+  protected List<int[]> initialClauses;
+  protected List<int[]> universalClauses;
+  protected List<int[]> goalClauses;
+  protected List<int[]> transitionalClauses;
   protected int stepVars;
+  protected BiPredicate<Operator, Argument> isGrounded;
 }

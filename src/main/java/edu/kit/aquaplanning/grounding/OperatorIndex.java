@@ -51,16 +51,13 @@ public class OperatorIndex {
 
   private PlanningProblem p;
 
-  private BiPredicate<Operator, Argument> argumentFilter;
-
-  public OperatorIndex(PlanningProblem p, BiPredicate<Operator, Argument> isGrounded) {
+  public OperatorIndex(PlanningProblem p) {
 
     this.instantiatedOperators = new HashMap<>();
     this.predicateOperatorMap = new HashMap<>();
     this.operatorsWithoutPreconditions = new ArrayList<>();
     this.operatorArgPositions = new HashMap<>();
     this.p = p;
-    this.argumentFilter = isGrounded;
 
     // For each operator
     opLoop: for (Operator op : p.getOperators()) {
@@ -307,11 +304,6 @@ public class OperatorIndex {
         } else {
           // Assignment is not complete yet: decide on next argument
           int argPos = orderedArgIndices[decisionLevel];
-          if (!argumentFilter.test(op, op.getArguments().get(argPos))) {
-            ArgumentAssignment newAssignment = new ArgumentAssignment(partialAssignment);
-            assignmentStack.push(newAssignment);
-            continue;
-          }
           for (Argument arg : eligibleArguments.get(argPos)) {
             ArgumentAssignment newAssignment = new ArgumentAssignment(partialAssignment);
             newAssignment.set(argPos, arg);

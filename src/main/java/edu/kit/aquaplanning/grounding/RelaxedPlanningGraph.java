@@ -35,12 +35,12 @@ public class RelaxedPlanningGraph {
 	 * The graph's layers are computed successively by calling hasNextLayer
 	 * and computeNextLayer.
 	 */
-	public RelaxedPlanningGraph(PlanningProblem problem, BiPredicate<Operator, Argument> isGrounded) {
+	public RelaxedPlanningGraph(PlanningProblem problem) {
 		
 		this.liftedActions = new ArrayList<>();
 		this.liftedStates = new ArrayList<>();
 		
-		this.opIndex = new OperatorIndex(problem, isGrounded);
+		this.opIndex = new OperatorIndex(problem);
 		
 		constants = new ArrayList<>();
 		constants.addAll(problem.getConstants());
