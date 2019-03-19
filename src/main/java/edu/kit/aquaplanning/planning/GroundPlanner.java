@@ -33,8 +33,6 @@ public abstract class GroundPlanner extends Planner {
     case parallel:
       Logger.log(Logger.INFO, "Doing parallel planning with up to " + config.numThreads + " threads.");
       return new PortfolioParallelPlanner(config);
-    case liftedSat:
-      return null;
     default:
       return null;
     }

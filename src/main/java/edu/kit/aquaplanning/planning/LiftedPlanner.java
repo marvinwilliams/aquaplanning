@@ -23,16 +23,12 @@ public abstract class LiftedPlanner extends Planner {
 
   public static LiftedPlanner getPlanner(Configuration config) {
     switch (config.plannerType) {
-    case forwardSSS:
-      return null;
-    case satBased:
-      return null;
-    case hegemannSat:
-      return null;
-    case parallel:
-      return null;
-    case liftedSat:
-      return new LiftedSatPlanner(config);
+    case pLiftedSat:
+      return new PureLiftedSatPlanner(config);
+    case gLiftedSat:
+      return new GroundLiftedSatPlanner(config);
+    case hLiftedSat:
+      return new HelperLiftedSatPlanner(config);
     default:
       return null;
     }

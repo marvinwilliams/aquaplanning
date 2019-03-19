@@ -68,7 +68,11 @@ public abstract class Planner {
           return true;
 		case parallel:
           return true;
-        case liftedSat:
+        case pLiftedSat:
+          return false;
+        case gLiftedSat:
+          return false;
+        case hLiftedSat:
           return false;
 		}
 		return true;

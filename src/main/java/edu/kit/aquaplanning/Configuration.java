@@ -87,7 +87,7 @@ public class Configuration {
 	 */
 	
 	public enum PlannerType {
-		forwardSSS, satBased, hegemannSat, parallel, liftedSat;
+		forwardSSS, satBased, hegemannSat, parallel, pLiftedSat, gLiftedSat, hLiftedSat;
 	}
 	@Option(paramLabel = "plannerType", names = {"-p", "--planner"}, 
 			description = "Planner type to use: " + USAGE_OPTIONS_AND_DEFAULT, 
