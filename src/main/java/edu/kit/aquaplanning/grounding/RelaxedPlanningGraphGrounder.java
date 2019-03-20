@@ -33,14 +33,7 @@ public class RelaxedPlanningGraphGrounder extends BaseGrounder {
     super(config);
   }
 
-  /**
-   * Grounds the entire problem.
-   */
-  @Override
-  public GroundPlanningProblem ground(PlanningProblem problem) {
-
-    setProblem(problem);
-
+  public RelaxedPlanningGraph computeGraph(PlanningProblem problem) {
     // First, preprocess the problem into a standardized structure
     new Preprocessor(config).preprocess(problem);
 
@@ -72,7 +65,17 @@ public class RelaxedPlanningGraphGrounder extends BaseGrounder {
     while (graph.hasNextLayer()) {
       graph.computeNextLayer();
     }
+    return graph;
+  }
 
+  /**
+   * Grounds the entire problem.
+   */
+  @Override
+  public GroundPlanningProblem ground(PlanningProblem problem) {
+    setProblem(problem);
+
+    RelaxedPlanningGraph graph = computeGraph(problem);
     // Generate action objects
     Logger.log(Logger.INFO_V, "Generating ground action objects ...");
     Set<Action> actionSet = new HashSet<>();
