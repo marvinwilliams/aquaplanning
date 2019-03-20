@@ -37,7 +37,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     problem = p;
     RelaxedPlanningGraphGrounder grounder = new RelaxedPlanningGraphGrounder(config);
     RelaxedPlanningGraph graph = grounder.computeGraph(p);
-    isGrounded = (o, a) -> a.getName().startsWith("?x");
+    isGrounded = (o, a) -> a.getName().startsWith("?p");
     setIDs(graph);
     generateClauses();
     // initialize the SAT solver
@@ -75,13 +75,14 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
           System.out.print("Apply action " + i + " with");
           List<Argument> args = new ArrayList<>();
           for (int j = 0; j < o.getArguments().size(); j++) {
-            Argument a = o.getArguments().get(j);
-            boolean found = getConstantsOfType(a.getType()).size() == 0;
-            for (int k = 0; k < getConstantsOfType(a.getType()).size(); k++) {
-              if (model[getParameterId(i, j, constantId.get(getConstantsOfType(a.getType()).get(k)))
-                  + s * stepVars] >= 0) {
-                args.add(getConstantsOfType(a.getType()).get(k));
-                System.out.print(" " + j + ": " + getConstantsOfType(a.getType()).get(k));
+            if (o.getArguments().get(j).isConstant()) {
+              args.add(null);
+              continue;
+            }
+            boolean found = eligibleConstants.get(i).get(j).size() == 0;
+            for (int k = 0; k < eligibleConstants.get(i).get(j).size(); k++) {
+              if (model[getParameterId(i, j, k) + s * stepVars] >= 0) {
+                args.add(constants.get(eligibleConstants.get(i).get(j).get(k)));
                 found = true;
                 break;
               }
@@ -143,29 +144,31 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     for (Operator operator : problem.getOperators()) {
       System.out.println("Lifted operator");
       System.out.println(operator);
+      int numParameters = operator.getArguments().size();
       // System.out.print("Grounded candidates: ");
       for (Operator o : graph.getLiftedActions()) {
         if (operator.getName().equals(o.getName())) {
           // System.out.print(" " + o);
-          List<Argument> args = new ArrayList<Argument>();
-          List<Argument> assigned = new ArrayList<Argument>();
+          List<Argument> grounded = new ArrayList<Argument>();
+          List<Argument> free = new ArrayList<Argument>();
           for (int i = 0; i < operator.getArguments().size(); i++) {
             if (isGrounded.test(operator, operator.getArguments().get(i))) {
-              args.add(o.getArguments().get(i));
+              grounded.add(o.getArguments().get(i));
+              free.add(null);
             } else {
-              args.add(null);
-              assigned.add(o.getArguments().get(i));
+              grounded.add(null);
+              free.add(o.getArguments().get(i));
             }
           }
-          Operator newOperator = operator.getOperatorWithGroundArguments(args);
-          newOperator.removeConstantArguments();
+          Operator newOperator = operator.getOperatorWithGroundArguments(grounded);
+          // newOperator.removeConstantArguments();
           if (!operatorId.containsKey(newOperator)) {
             System.out.println("New Operator: " + newOperator);
             operatorId.put(newOperator, operators.size());
             operators.add(newOperator);
             List<List<Integer>> eligibleList = new ArrayList<>();
             List<List<Integer>> parameterSatList = new ArrayList<>();
-            for (int i = 0; i < newOperator.getArguments().size(); i++) {
+            for (int i = 0; i < numParameters; i++) {
               eligibleList.add(new ArrayList<>());
               parameterSatList.add(new ArrayList<>());
             }
@@ -173,33 +176,45 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
             parameterSatId.add(parameterSatList);
             operatorSatId.add(satCounter++);
           }
-          for (int i = 0; i < assigned.size(); i++) {
-            if (!eligibleConstants.get(operatorId.get(newOperator)).get(i).contains(constantId.get(assigned.get(i)))) {
-              eligibleConstants.get(operatorId.get(newOperator)).get(i).add(constantId.get(assigned.get(i)));
-              parameterSatId.get(operatorId.get(newOperator)).get(i).add(satCounter++);
+          for (int i = 0; i < numParameters; i++) {
+            if (free.get(i) != null) {
+              if (!eligibleConstants.get(operatorId.get(newOperator)).get(i).contains(constantId.get(free.get(i)))) {
+                eligibleConstants.get(operatorId.get(newOperator)).get(i).add(constantId.get(free.get(i)));
+                parameterSatId.get(operatorId.get(newOperator)).get(i).add(satCounter++);
+              }
             }
           }
         }
       }
-      // System.out.println("");
     }
+    System.out.println("eligible parameters: " + eligibleConstants);
 
     forbiddenClause = new ArrayList<>();
-    System.out.println("eligible parameters: " + eligibleConstants);
     for (int oNr = 0; oNr < operators.size(); oNr++) {
       Operator operator = operators.get(oNr);
-      System.out.println("Operator " + oNr);
+      System.out.println("Grounded Operator:");
+      System.out.println(operator);
       {
         List<Condition> flatConditions = getFlatConditions(operator.getPrecondition());
         for (Condition c : flatConditions) {
           System.out.println("\tPrecondition " + c);
-          List<Pair<Integer, Integer>> paramList = getParamList(oNr, c.getArguments());
-          System.out.println("\t\tParameter mapping: " + paramList);
+          List<Pair<Integer, Integer>> matching = getParamMatching(oNr, c.getArguments());
+          System.out.println("\t\tParameter mapping: " + matching);
           for (Condition gc : groundCondition(c)) {
             List<Pair<Integer, Integer>> assignment = new ArrayList<>();
-            for (Pair<Integer, Integer> paramPos : paramList) {
-              assignment.add(new Pair<>(paramPos.getRight(), eligibleConstants.get(oNr).get(paramPos.getRight())
-                  .indexOf(constantId.get(gc.getArguments().get(paramPos.getLeft())))));
+            boolean valid = true;
+            for (Pair<Integer, Integer> match : matching) {
+              int argumentIndex = eligibleConstants.get(oNr).get(match.getRight())
+                  .indexOf(constantId.get(gc.getArguments().get(match.getLeft())));
+              if (argumentIndex > -1) {
+                assignment.add(new Pair<>(match.getRight(), argumentIndex));
+              } else {
+                valid = false;
+                break;
+              }
+            }
+            if (!valid) {
+              continue;
             }
             if (predicateId.containsKey(gc)) {
               conditionLookup.get(predicateId.get(gc)).get(0).get(gc.isNegated() ? 1 : 0)
@@ -211,16 +226,26 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
         }
       }
       {
-        List<Condition> flatConditions = getFlatConditions(operator.getPrecondition());
+        List<Condition> flatConditions = getFlatConditions(operator.getEffect());
         for (Condition c : flatConditions) {
           System.out.println("\tEffect " + c);
-          List<Pair<Integer, Integer>> paramList = getParamList(oNr, c.getArguments());
-          System.out.println("\t\tParameter mapping: " + paramList);
+          List<Pair<Integer, Integer>> matching = getParamMatching(oNr, c.getArguments());
+          System.out.println("\t\tParameter mapping: " + matching);
           for (Condition gc : groundCondition(c)) {
             List<Pair<Integer, Integer>> assignment = new ArrayList<>();
-            for (Pair<Integer, Integer> paramPos : paramList) {
-              assignment.add(new Pair<>(paramPos.getRight(), eligibleConstants.get(oNr).get(paramPos.getRight())
-                  .indexOf(constantId.get(gc.getArguments().get(paramPos.getLeft())))));
+            boolean valid = true;
+            for (Pair<Integer, Integer> match : matching) {
+              int argumentIndex = eligibleConstants.get(oNr).get(match.getRight())
+                  .indexOf(constantId.get(gc.getArguments().get(match.getLeft())));
+              if (argumentIndex > -1) {
+                assignment.add(new Pair<>(match.getRight(), argumentIndex));
+              } else {
+                valid = false;
+                break;
+              }
+            }
+            if (!valid) {
+              continue;
             }
             if (predicateId.containsKey(gc)) {
               conditionLookup.get(predicateId.get(gc)).get(1).get(gc.isNegated() ? 1 : 0)
@@ -248,6 +273,9 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
       System.out.println("Operator " + oNr);
       for (int pos = 0; pos < eligibleConstants.get(oNr).size(); pos++) {
         Argument argument = operator.getArguments().get(pos);
+        if (argument.isConstant()) {
+          continue;
+        }
         List<Integer> argumentConstants = eligibleConstants.get(oNr).get(pos);
         {
           // Operator -> each parameter
@@ -352,7 +380,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
       int[] clause = new int[opHasForbidden.getRight().size()];
       int i = 0;
       for (Pair<Integer, Integer> assignment : opHasForbidden.getRight()) {
-        clause[i++] = -getParameterId(assignment.getLeft(), assignment.getLeft(), assignment.getRight());
+        clause[i++] = -getParameterId(opHasForbidden.getLeft(), assignment.getLeft(), assignment.getRight());
       }
       universalClauses.add(clause);
     }
@@ -426,16 +454,16 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     return result;
   }
 
-  protected List<Pair<Integer, Integer>> getParamList(int oNr, List<Argument> args) {
+  protected List<Pair<Integer, Integer>> getParamMatching(int oNr, List<Argument> args) {
     Operator o = operators.get(oNr);
-    List<Pair<Integer, Integer>> paramList = new ArrayList<>();
+    List<Pair<Integer, Integer>> matching = new ArrayList<>();
     for (int i = 0; i < args.size(); i++) {
       Argument a = args.get(i);
       if (!a.isConstant()) {
-        paramList.add(new Pair<>(i, o.getArguments().indexOf(a)));
+        matching.add(new Pair<>(i, o.getArguments().indexOf(a)));
       }
     }
-    return paramList;
+    return matching;
   }
 
   protected List<Condition> getFlatConditions(AbstractCondition ac) {
