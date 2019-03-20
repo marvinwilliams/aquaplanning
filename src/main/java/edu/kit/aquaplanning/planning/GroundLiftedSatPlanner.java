@@ -187,7 +187,6 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
         }
       }
     }
-    System.out.println("eligible parameters: " + eligibleConstants);
 
     forbiddenClause = new ArrayList<>();
     for (int oNr = 0; oNr < operators.size(); oNr++) {
@@ -257,10 +256,11 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
         }
       }
     }
-    stepVars = satCounter - 1;
-
+    System.out.println("eligible parameters: " + eligibleConstants);
     System.out.println("Condition lookup: " + conditionLookup);
     System.out.println("Forbidden" + forbiddenClause);
+
+    stepVars = satCounter - 1;
   }
 
   protected void generateClauses() {
@@ -391,11 +391,19 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     Stack<List<Argument>> work = new Stack<>();
     int numParameters = condition.getNumArgs();
     work.push(new ArrayList<>(condition.getArguments()));
+    List<List<Argument>> groundArguments = new ArrayList<>();
+    for (int i = 0; i < numParameters; i++) {
+      if (!condition.getArguments().get(i).isConstant()) {
+        groundArguments.add(getConstantsOfType(condition.getArguments().get(i).getType()));
+      } else {
+        groundArguments.add(null);
+      }
+    }
     while (!work.isEmpty()) {
       List<Argument> first = work.pop();
       int pos = -1;
       for (int i = 0; i < numParameters; i++) {
-        if (!first.get(i).isConstant()) {
+        if (!first.get(i).isConstant() && groundArguments.get(i) != null) {
           pos = i;
           break;
         }
@@ -407,7 +415,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
         }
         result.add(c);
       } else {
-        for (Argument a : getConstantsOfType(first.get(pos).getType())) {
+        for (Argument a : groundArguments.get(pos)) {
           List<Argument> newList = new ArrayList<>(first);
           newList.set(pos, a);
           work.push(newList);
@@ -417,42 +425,42 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     return result;
   }
 
-  protected Set<Operator> groundOperator(Operator operator) {
-    Set<Operator> result = new HashSet<>();
-    Stack<List<Argument>> work = new Stack<>();
-    int numParameters = operator.getArguments().size();
-    work.push(Arrays.asList(new Argument[numParameters]));
-    List<Integer> positions = new ArrayList<>();
-    List<List<Argument>> groundArguments = new ArrayList<>();
-    for (int i = 0; i < numParameters; i++) {
-      if (isGrounded.test(operator, operator.getArguments().get(i))) {
-        positions.add(i);
-        groundArguments.add(getConstantsOfType(operator.getArguments().get(i).getType()));
-      }
-    }
-    while (!work.isEmpty()) {
-      List<Argument> first = work.pop();
-      int pos = -1;
-      for (int i = 0; i < positions.size(); i++) {
-        if (first.get(positions.get(i)) == null) {
-          pos = i;
-          break;
-        }
-      }
-      if (pos == -1) {
-        Operator o = operator.getOperatorWithGroundArguments(first);
-        o.removeConstantArguments();
-        result.add(o);
-      } else {
-        for (Argument a : groundArguments.get(pos)) {
-          List<Argument> newList = new ArrayList<>(first);
-          newList.set(positions.get(pos), a);
-          work.push(newList);
-        }
-      }
-    }
-    return result;
-  }
+  // protected Set<Operator> groundOperator(Operator operator) {
+  //   Set<Operator> result = new HashSet<>();
+  //   Stack<List<Argument>> work = new Stack<>();
+  //   int numParameters = operator.getArguments().size();
+  //   work.push(new ArrayList<>(operator.getArguments()));
+  //   List<List<Argument>> groundArguments = new ArrayList<>();
+  //   for (int i = 0; i < numParameters; i++) {
+  //     if (!operator.getArguments().get(i).isConstant() && isGrounded.test(operator, operator.getArguments().get(i))) {
+  //       groundArguments.add(getConstantsOfType(operator.getArguments().get(i).getType()));
+  //     } else {
+  //       groundArguments.add(null);
+  //     }
+  //   }
+  //   while (!work.isEmpty()) {
+  //     List<Argument> first = work.pop();
+  //     int pos = -1;
+  //     for (int i = 0; i < first.size(); i++) {
+  //       if (!first.get(i).isConstant() && groundArguments.get(i) != null) {
+  //         pos = i;
+  //         break;
+  //       }
+  //     }
+  //     if (pos == -1) {
+  //       Operator o = operator.getOperatorWithGroundArguments(first);
+  //       // o.removeConstantArguments();
+  //       result.add(o);
+  //     } else {
+  //       for (Argument a : groundArguments.get(pos)) {
+  //         List<Argument> newList = new ArrayList<>(first);
+  //         newList.set(pos, a);
+  //         work.push(newList);
+  //       }
+  //     }
+  //   }
+  //   return result;
+  // }
 
   protected List<Pair<Integer, Integer>> getParamMatching(int oNr, List<Argument> args) {
     Operator o = operators.get(oNr);
