@@ -1,7 +1,6 @@
 package edu.kit.aquaplanning.planning;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -37,7 +36,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     problem = p;
     RelaxedPlanningGraphGrounder grounder = new RelaxedPlanningGraphGrounder(config);
     RelaxedPlanningGraph graph = grounder.computeGraph(p);
-    isGrounded = (o, a) -> a.getName().startsWith("?p");
+    isGrounded = (o, a) -> a.getName().startsWith("?x");
     setIDs(graph);
     generateClauses();
     // initialize the SAT solver
