@@ -23,6 +23,7 @@ import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionTy
 import edu.kit.aquaplanning.model.lifted.condition.Condition;
 import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
 import edu.kit.aquaplanning.sat.SatSolver;
+import edu.kit.aquaplanning.util.Logger;
 import edu.kit.aquaplanning.util.Pair;
 
 public class HelperLiftedSatPlanner extends LiftedPlanner {
@@ -34,11 +35,13 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
   @Override
   public Plan findPlan(PlanningProblem p) {
     problem = p;
+    Logger.log(Logger.INFO, "TIME0 Generate clauses");
     RelaxedPlanningGraphGrounder grounder = new RelaxedPlanningGraphGrounder(config);
     RelaxedPlanningGraph graph = grounder.computeGraph(p);
-    isGrounded = (o, a) -> a.getName().startsWith("?x");
+    isGrounded = (o, a) -> a.getName().startsWith("?x") && false;
     setIDs(graph);
     generateClauses();
+    Logger.log(Logger.INFO, "TIME1");
     // initialize the SAT solver
     SatSolver solver = new SatSolver();
 
@@ -47,12 +50,13 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
     for (int[] clause : initialClauses) {
       solver.addClause(clause);
     }
+    Logger.log(Logger.INFO, "TIME2 Starting solver");
     while (true) {
       if (solver.isSatisfiable(goal)) {
-        System.out.println("Solution found in step " + step);
+        Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
         break;
       }
-      System.out.println("No solution found in step " + step);
+      Logger.log(Logger.INFO, "No solution found in step " + step);
       for (int[] clause : universalClauses) {
         solver.addClause(clause);
       }
@@ -70,8 +74,6 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
       for (int i = 0; i < operators.size(); i++) {
         if (model[getOperatorNr(i) + s * stepVars] > 0) {
           Operator o = operators.get(i);
-          System.out.println("Original Operator: " + operators.get(i));
-          System.out.print("Apply action " + i + " with");
           List<Argument> args = new ArrayList<>();
           for (int j = 0; j < o.getArguments().size(); j++) {
             if (o.getArguments().get(j).isConstant()) {
@@ -87,14 +89,11 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
               }
             }
             if (!found) {
-              System.out.println("ERROR: no parameter set in solution");
+              Logger.log(Logger.ERROR, "Parameter not set in solution");
               System.exit(1);
             }
           }
-          System.out.println("");
           Operator go = o.getOperatorWithGroundArguments(args);
-          System.out.println("New operator: " + go);
-          System.out.println(grounder.getAction(go));
           plan.appendAtBack(grounder.getAction(go));
         }
       }
@@ -111,15 +110,14 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
       constantId.put(a, constants.size());
       constants.add(a);
     }
-    System.out.println("Constants:");
-    System.out.println(constants);
+    Logger.log(Logger.INFO, "Number of constants: " + constants.size());
 
     predicates = new ArrayList<>();
     predicateSatId = new ArrayList<>();
     predicateId = new HashMap<>();
     conditionLookup = new ArrayList<>();
+    Logger.log(Logger.INFO, "Number of lifted predicates: " + graph.getLiftedState(graph.getCurrentLayer()).size());
     for (Condition p : graph.getLiftedState(graph.getCurrentLayer())) {
-      System.out.println("Predicate: " + p);
       predicateId.put(p, predicates.size());
       Condition neg = p.withoutNegation();
       neg.setNegated(true);
@@ -134,17 +132,17 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
       conditionLookup.get(conditionLookup.size() - 1).get(1).add(new ArrayList<>());
       predicateSatId.add(satCounter++);
     }
+    Logger.log(Logger.INFO, "Number of predicates: " + predicates.size());
 
     operators = new ArrayList<>();
     operatorSatId = new ArrayList<>();
     operatorId = new HashMap<>();
     parameterSatId = new ArrayList<>();
     eligibleConstants = new ArrayList<>();
+    Logger.log(Logger.INFO, "Number of lifted operators: " + problem.getOperators().size());
     helperLookup = new ArrayList<>();
     forbiddenClause = new ArrayList<>();
     for (Operator operator : problem.getOperators()) {
-      System.out.println("Lifted operator");
-      System.out.println(operator);
       int numParameters = operator.getArguments().size();
       // System.out.print("Grounded candidates: ");
       for (Operator o : graph.getLiftedActions()) {
@@ -164,7 +162,6 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
           Operator newOperator = operator.getOperatorWithGroundArguments(grounded);
           // newOperator.removeConstantArguments();
           if (!operatorId.containsKey(newOperator)) {
-            System.out.println("New Operator: " + newOperator);
             operatorId.put(newOperator, operators.size());
             operators.add(newOperator);
             List<List<Integer>> eligibleList = new ArrayList<>();
@@ -191,16 +188,13 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
       }
     }
 
+    int helperCount = 0;
     for (int oNr = 0; oNr < operators.size(); oNr++) {
       Operator operator = operators.get(oNr);
-      System.out.println("Grounded Operator:");
-      System.out.println(operator);
       {
         List<Condition> flatConditions = getFlatConditions(operator.getPrecondition());
         for (Condition c : flatConditions) {
-          System.out.println("\tPrecondition " + c);
           List<Pair<Integer, Integer>> matching = getParamMatching(oNr, c.getArguments());
-          System.out.println("\t\tParameter mapping: " + matching);
           for (Condition gc : groundCondition(c)) {
             List<Pair<Integer, Integer>> assignment = new ArrayList<>();
             boolean valid = true;
@@ -222,6 +216,7 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
                   .add(new Pair<>(oNr, assignment));
               if (!helperLookup.get(oNr).containsKey(assignment)) {
                 helperLookup.get(oNr).put(assignment, satCounter++);
+                helperCount++;
               }
             } else {
               forbiddenClause.get(oNr).add(assignment);
@@ -232,9 +227,7 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
       {
         List<Condition> flatConditions = getFlatConditions(operator.getEffect());
         for (Condition c : flatConditions) {
-          System.out.println("\tEffect " + c);
           List<Pair<Integer, Integer>> matching = getParamMatching(oNr, c.getArguments());
-          System.out.println("\t\tParameter mapping: " + matching);
           for (Condition gc : groundCondition(c)) {
             List<Pair<Integer, Integer>> assignment = new ArrayList<>();
             boolean valid = true;
@@ -256,6 +249,7 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
                   .add(new Pair<>(oNr, assignment));
               if (!helperLookup.get(oNr).containsKey(assignment)) {
                 helperLookup.get(oNr).put(assignment, satCounter++);
+                helperCount++;
               }
             } else {
               forbiddenClause.get(oNr).add(assignment);
@@ -264,12 +258,11 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
         }
       }
     }
-    System.out.println("eligible parameters: " + eligibleConstants);
-    System.out.println("Condition lookup: " + conditionLookup);
-    System.out.println("Forbidden: " + forbiddenClause);
-    System.out.println("Helper: " + helperLookup);
+    Logger.log(Logger.INFO, "Number of operators: " + operators.size());
 
     stepVars = satCounter - 1;
+    Logger.log(Logger.INFO, "Number of SAT helper variables: " + helperCount);
+    Logger.log(Logger.INFO, "Number of SAT variables: " + stepVars);
   }
 
   protected void generateClauses() {
@@ -279,7 +272,6 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
     transitionClauses = new ArrayList<>();
     for (int oNr = 0; oNr < operators.size(); oNr++) {
       Operator operator = operators.get(oNr);
-      System.out.println("Operator " + oNr);
       for (int pos = 0; pos < eligibleConstants.get(oNr).size(); pos++) {
         Argument argument = operator.getArguments().get(pos);
         if (argument.isConstant()) {
@@ -348,8 +340,6 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
           for (Pair<Integer, List<Pair<Integer, Integer>>> opSupportsPredicate : conditionLookup.get(pNr).get(condType)
               .get(sign)) {
             int oNr = opSupportsPredicate.getLeft();
-            System.out.println("Operator " + oNr + " " + (sign == 1 ? "negated " : "")
-                + (condType == 0 ? "precond" : "effect") + ": " + pNr);
             int[] clause = new int[3];
             clause[0] = -getOperatorNr(oNr);
             clause[1] = -helperLookup.get(oNr).get(opSupportsPredicate.getRight());
@@ -372,7 +362,6 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
             if (effOp == preOp) {
               continue;
             }
-            System.out.println("Operator " + effOp + " and " + preOp + " interfere on " + pNr);
             int[] clause = new int[4];
             clause[0] = -getOperatorNr(effOp);
             clause[1] = -getOperatorNr(preOp);
@@ -403,6 +392,7 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
         transitionClauses.add(clause);
       }
     }
+    Logger.log(Logger.INFO, "Number of SAT clauses: " + universalClauses.size() + transitionClauses.size());
   }
 
   protected Set<Condition> groundCondition(Condition condition) {
@@ -501,13 +491,13 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
     } else if (ac.getConditionType() == ConditionType.conjunction) {
       for (AbstractCondition elem : ((ConditionSet) ac).getConditions()) {
         if (elem.getConditionType() != ConditionType.atomic) {
-          System.out.println("ERROR: condition not flat: " + ac);
+          Logger.log(Logger.ERROR, "Conditionlist not flat: " + ac);
           System.exit(1);
         }
         result.add((Condition) elem);
       }
     } else {
-      System.out.println("ERROR: condition not flat: " + ac);
+      Logger.log(Logger.ERROR, "Conditionlist not flat: " + ac);
       System.exit(1);
     }
     return result;
@@ -578,7 +568,7 @@ public class HelperLiftedSatPlanner extends LiftedPlanner {
 
   protected void setGoal() {
     if (problem.getGoals().size() != 1) {
-      System.out.println("ERROR: more than one goal");
+      Logger.log(Logger.ERROR, "More than one goal");
       System.exit(1);
     }
     List<Condition> goalConditions = getFlatConditions(problem.getGoals().get(0));

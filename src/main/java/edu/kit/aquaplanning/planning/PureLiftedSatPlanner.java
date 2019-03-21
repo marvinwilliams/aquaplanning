@@ -36,8 +36,8 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
   @Override
   public Plan findPlan(PlanningProblem p) {
     problem = p;
-    isGrounded = (o, a) -> a.getName().startsWith("?c") && false;
     Logger.log(Logger.INFO, "TIME0 Generate clauses");
+    isGrounded = (o, a) -> a.getName().startsWith("?c") && false;
     setIDs();
     generateClauses();
     Logger.log(Logger.INFO, "TIME1");
