@@ -196,7 +196,7 @@ public abstract class BaseGrounder implements Grounder {
 	 * consists of conjunctive atomic conditions and the second
 	 * set contains all other (i.e. more complex) expressions.
 	 */
-	protected Pair<ConditionSet, ConditionSet> splitCondition(AbstractCondition cond) {
+	public Pair<ConditionSet, ConditionSet> splitCondition(AbstractCondition cond) {
 		
 		ConditionSet simplePartSet = new ConditionSet(ConditionType.conjunction);
 		ConditionSet complexPartSet = new ConditionSet(ConditionType.conjunction);
