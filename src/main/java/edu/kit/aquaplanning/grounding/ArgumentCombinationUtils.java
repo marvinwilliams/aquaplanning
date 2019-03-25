@@ -14,32 +14,33 @@ import edu.kit.aquaplanning.model.lifted.Type;
 public class ArgumentCombinationUtils {
 	
 	/**
-	 * Given a list of possible constants at each argument index, 
+	 * Given a list of possible values at each index,
 	 * allows to iterate over all possible combinations.
 	 */
-	public static class Iterator implements java.util.Iterator<List<Argument>> {
+    
+	public static class Iterator<T> implements java.util.Iterator<List<T>> {
 		
-		private List<List<Argument>> eligibleArgs;
-		private List<Integer> currentArgIndices;
+		private List<List<T>> eligible;
+		private List<Integer> currentIndices;
 		private boolean hasNext;
 		
 		/**
-		 * @param eligibleArgs At index i, contains a list of all eligible
-		 * constants for the argument position i.
+		 * @param eligible At index i, contains a list of all eligible
+		 * values for the position i.
 		 */
-		public Iterator(List<List<Argument>> eligibleArgs) {
+		public Iterator(List<List<T>> eligible) {
 			
-			this.eligibleArgs = eligibleArgs;
+			this.eligible = eligible;
 
-			// Set current argument indices to zero
-			// (first argument combination)
-			currentArgIndices = new ArrayList<>();
+			// Set current value indices to zero
+			// (first combination)
+			currentIndices = new ArrayList<>();
 			hasNext = true;
-			for (int i = 0; i < eligibleArgs.size(); i++) {
-				if (eligibleArgs.get(i).isEmpty())
-					// no arguments at position i to choose from
+			for (int i = 0; i < eligible.size(); i++) {
+				if (eligible.get(i).isEmpty())
+					// no value at position i to choose from
 					hasNext = false; 
-				currentArgIndices.add(0);
+				currentIndices.add(0);
 			}
 		}
 		
@@ -52,32 +53,32 @@ public class ArgumentCombinationUtils {
 		}
 		
 		/**
-		 * Get the next combination of constants.
+		 * Get the next combination.
 		 */
 		@Override
-		public List<Argument> next() {
+		public List<T> next() {
 			
-			// Create current constant combination
-			List<Argument> args = new ArrayList<>();
-			int argPos = 0;
-			for (int argIdx : currentArgIndices) {
-				args.add(eligibleArgs.get(argPos++).get(argIdx));
+			// Create current combination
+			List<T> values = new ArrayList<>();
+			int valPos = 0;
+			for (int idx : currentIndices) {
+				values.add(eligible.get(valPos++).get(idx));
 			}
 			
-			// Get to next argument combination, if possible
+			// Get to next combination, if possible
 			hasNext = false;
-			for (int pos = currentArgIndices.size()-1; pos >= 0; pos--) {
+			for (int pos = currentIndices.size()-1; pos >= 0; pos--) {
 				
-				// Are there more argument options at this position?
-				if (currentArgIndices.get(pos)+1 < eligibleArgs.get(pos).size()) {
+				// Are there more options at this position?
+				if (currentIndices.get(pos)+1 < eligible.get(pos).size()) {
 					// -- Yes
 					
-					// Proceed to the next argument option at this position
-					currentArgIndices.set(pos, currentArgIndices.get(pos)+1);
+					// Proceed to the next option at this position
+					currentIndices.set(pos, currentIndices.get(pos)+1);
 					
-					// Reset all succeeding argument options to zero
-					for (int posAfter = pos+1; posAfter < currentArgIndices.size(); posAfter++) {
-						currentArgIndices.set(posAfter, 0);
+					// Reset all succeeding options to zero
+					for (int posAfter = pos+1; posAfter < currentIndices.size(); posAfter++) {
+						currentIndices.set(posAfter, 0);
 					}
 					
 					hasNext = true;
@@ -85,12 +86,12 @@ public class ArgumentCombinationUtils {
 				}
 			}
 			
-			return args;
+			return values;
 		}
 	}
 	
-	public static Iterator iterator(List<List<Argument>> eligibleArgs) {
-		return new Iterator(eligibleArgs);
+	public static <T> Iterator<T> iterator(List<List<T>> eligible) {
+		return new Iterator<T>(eligible);
 	}
 	
 	/**

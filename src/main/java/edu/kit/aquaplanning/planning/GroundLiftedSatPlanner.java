@@ -23,6 +23,7 @@ import edu.kit.aquaplanning.model.lifted.condition.Condition;
 import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
 import edu.kit.aquaplanning.sat.SatSolver;
 import edu.kit.aquaplanning.util.Logger;
+import edu.kit.aquaplanning.util.Pair;
 
 public class GroundLiftedSatPlanner extends LiftedPlanner {
 
@@ -79,9 +80,10 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
               continue;
             }
             boolean found = eligibleArguments.get(i).get(j).size() == 0;
-            for (int k = 0; k < eligibleArguments.get(i).get(j).size(); k++) {
+            for (Argument arg : eligibleArguments.get(i).get(j).keySet()) {
+              int k = eligibleArguments.get(i).get(j).get(arg);
               if (model[getParameterSatId(i, j, k) + s * stepVars] >= 0) {
-                args.add(eligibleArguments.get(i).get(j).get(k));
+                args.add(arg);
                 found = true;
                 break;
               }
@@ -110,10 +112,10 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     for (Condition p : graph.getLiftedState(graph.getCurrentLayer())) {
       predicates.put(p, predicates.size());
       predicateSatId.add(satCounter++);
-      preconditionsPos.add(new ArrayList<>());
-      preconditionsNeg.add(new ArrayList<>());
-      effectsPos.add(new ArrayList<>());
-      effectsNeg.add(new ArrayList<>());
+      preconditionsPos.add(new HashSet<>());
+      preconditionsNeg.add(new HashSet<>());
+      effectsPos.add(new HashSet<>());
+      effectsNeg.add(new HashSet<>());
     }
   }
 
@@ -123,7 +125,6 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     parameterSatId = new ArrayList<>();
     eligibleArguments = new ArrayList<>();
     Map<String, Operator> operatorLookup = new HashMap<>();
-    forbidden = new ArrayList<>();
     Logger.log(Logger.INFO, "Number of lifted operators: " + problem.getOperators().size());
     for (Operator operator : problem.getOperators()) {
       operatorLookup.put(operator.getName(), operator);
@@ -131,77 +132,110 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     for (Operator operator : graph.getLiftedActions()) {
       Operator liftedOperator = operatorLookup.get(operator.getName());
       List<Argument> groundedArgs = new ArrayList<>();
-      List<Argument> liftedArgs = new ArrayList<>();
       for (Argument a : operator.getArguments()) {
         if (isGrounded.test(operator, a)) {
           groundedArgs.add(a);
-          liftedArgs.add(null);
         } else {
           groundedArgs.add(null);
-          liftedArgs.add(a);
         }
       }
       Operator newOperator = liftedOperator.getOperatorWithGroundArguments(groundedArgs);
       Integer operatorId = operators.get(newOperator);
       if (operatorId == null) {
         operatorId = operators.size();
+        // System.out.println("New operator " + operatorId + ": " + newOperator);
         operators.put(newOperator, operatorId);
         operatorSatId.add(satCounter++);
-        List<List<Argument>> operatorArguments = new ArrayList<>();
+        List<Map<Argument, Integer>> operatorArguments = new ArrayList<>();
         List<List<Integer>> satId = new ArrayList<>();
         for (int i = 0; i < newOperator.getArguments().size(); i++) {
           satId.add(new ArrayList<>());
-          operatorArguments.add(new ArrayList<>());
+          operatorArguments.add(new HashMap<>());
         }
         parameterSatId.add(satId);
         eligibleArguments.add(operatorArguments);
-        forbidden.add(new ForbiddenAssignment(newOperator));
       }
-      for (int i = 0; i < liftedArgs.size(); i++) {
-        if (liftedArgs.get(i) != null) {
-          if (!eligibleArguments.get(operatorId).get(i).contains(liftedArgs.get(i))) {
-            eligibleArguments.get(operatorId).get(i).add(liftedArgs.get(i));
+      for (int i = 0; i < newOperator.getArguments().size(); i++) {
+        if (!newOperator.getArguments().get(i).isConstant()) {
+          if (eligibleArguments.get(operatorId).get(i).putIfAbsent(operator.getArguments().get(i),
+              eligibleArguments.get(operatorId).get(i).size()) == null) {
             parameterSatId.get(operatorId).get(i).add(satCounter++);
           }
         }
       }
       {
-        ConditionSet simpleSet = grounder.splitCondition(newOperator.getPrecondition()).getLeft();
+        Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(newOperator.getPrecondition());
+        ConditionSet simpleSet = split.getLeft();
+        if (split.getRight() != null) {
+          if (split.getRight().getConditions().size() > 0) {
+            Logger.log(Logger.ERROR, "Precondition contains complex set: " + split);
+            System.exit(1);
+          }
+        }
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
             Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
             System.exit(1);
           }
           Condition precondition = (Condition) c;
-          SupportAssignment support = new SupportAssignment(newOperator, precondition);
+          ParameterMatching matching = getParameterMatching(newOperator, precondition);
           Condition groundPrecondition = precondition.getConditionBoundToArguments(newOperator.getArguments(),
-              liftedArgs);
+              operator.getArguments());
+          List<Integer> position = new ArrayList<>();
+          List<Integer> argumentId = new ArrayList<>();
+          // System.out.println("for operator " + newOperator);
+          // System.out.println("Arguments: " + eligibleArguments.get(operatorId));
+          // System.out.println("Predicate: " + precondition);
+          // System.out.println("GroundPredicate: " + groundPrecondition);
+          for (int i = 0; i < matching.size(); i++) {
+            position.add(matching.getOperatorPos(i));
+            argumentId.add(matching.getArgumentId(groundPrecondition, i));
+          }
+          // System.out.println("Positions: " + position);
+          // System.out.println("Ids: " + argumentId);
           if (groundPrecondition.isNegated()) {
-            preconditionsNeg.get(predicates.get(groundPrecondition.withoutNegation())).add(support);
+            preconditionsNeg.get(predicates.get(groundPrecondition.withoutNegation()))
+                .add(new Assignment(operatorId, position, argumentId));
           } else {
-            preconditionsPos.get(predicates.get(groundPrecondition)).add(support);
+            preconditionsPos.get(predicates.get(groundPrecondition))
+                .add(new Assignment(operatorId, position, argumentId));
           }
         }
       }
       {
-        ConditionSet simpleSet = grounder.splitCondition(newOperator.getEffect()).getLeft();
+        Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(newOperator.getEffect());
+        ConditionSet simpleSet = split.getLeft();
+        if (split.getRight() != null) {
+          if (split.getRight().getConditions().size() > 0) {
+            Logger.log(Logger.ERROR, "Effect contains complex set: " + split);
+            System.exit(1);
+          }
+        }
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
             Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
             System.exit(1);
           }
-          Condition precondition = (Condition) c;
-          SupportAssignment support = new SupportAssignment(newOperator, precondition);
-          Condition groundPrecondition = precondition.getConditionBoundToArguments(newOperator.getArguments(),
-              liftedArgs);
-          if (groundPrecondition.isNegated()) {
-            effectsNeg.get(predicates.get(groundPrecondition.withoutNegation())).add(support);
+          Condition effect = (Condition) c;
+          ParameterMatching matching = getParameterMatching(newOperator, effect);
+          Condition groundEffect = effect.getConditionBoundToArguments(newOperator.getArguments(),
+              operator.getArguments());
+          List<Integer> position = new ArrayList<>();
+          List<Integer> argumentId = new ArrayList<>();
+          for (int i = 0; i < matching.size(); i++) {
+            position.add(matching.getOperatorPos(i));
+            argumentId.add(matching.getArgumentId(groundEffect, i));
+          }
+          if (groundEffect.isNegated()) {
+            effectsNeg.get(predicates.get(groundEffect.withoutNegation()))
+                .add(new Assignment(operatorId, position, argumentId));
           } else {
-            effectsPos.get(predicates.get(groundPrecondition)).add(support);
+            effectsPos.get(predicates.get(groundEffect)).add(new Assignment(operatorId, position, argumentId));
           }
         }
       }
     }
+    System.out.println("Positive preconditions: " + preconditionsPos);
   }
 
   protected void initIDs() {
@@ -213,8 +247,8 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
 
     setOperators();
 
+    forbidden = new HashSet<>();
     for (Operator operator : operators.keySet()) {
-      int operatorId = operators.get(operator);
       {
         ConditionSet simpleSet = grounder.splitCondition(operator.getPrecondition()).getLeft();
         for (AbstractCondition c : simpleSet.getConditions()) {
@@ -223,7 +257,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
             System.exit(1);
           }
           Condition precondition = (Condition) c;
-          forbidden.get(operatorId).addCondition(precondition);
+          addForbiddenConditions(operator, precondition);
         }
       }
       {
@@ -234,7 +268,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
             System.exit(1);
           }
           Condition effect = (Condition) c;
-          forbidden.get(operatorId).addCondition(effect);
+          addForbiddenConditions(operator, effect);
         }
       }
     }
@@ -252,20 +286,29 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
         if (argument.isConstant()) {
           continue;
         }
-        List<Argument> args = eligibleArguments.get(oNr).get(pos);
+        int numArgs = eligibleArguments.get(oNr).get(pos).size();
         {
           // Operator -> each parameter
-          int[] clause = new int[args.size() + 1];
+          int[] clause = new int[numArgs + 1];
           clause[0] = -getOperatorSatId(oNr);
-          for (int i = 0; i < args.size(); i++) {
+          for (int i = 0; i < numArgs; i++) {
             clause[i + 1] = getParameterSatId(oNr, pos, i);
           }
           universalClauses.add(clause);
         }
         {
+          // Parameter -> Operator
+          for (int i = 0; i < numArgs; i++) {
+            int[] clause = new int[2];
+            clause[0] = -getParameterSatId(oNr, pos, i);
+            clause[1] = getOperatorSatId(oNr);
+            universalClauses.add(clause);
+          }
+        }
+        {
           // <=1 per Parameter
-          for (int c1 = 0; c1 < args.size(); c1++) {
-            for (int c2 = c1 + 1; c2 < args.size(); c2++) {
+          for (int c1 = 0; c1 < numArgs; c1++) {
+            for (int c2 = c1 + 1; c2 < numArgs; c2++) {
               int[] clause = new int[2];
               clause[0] = -getParameterSatId(oNr, pos, c1);
               clause[1] = -getParameterSatId(oNr, pos, c2);
@@ -277,18 +320,18 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     }
   }
 
-  protected void addConditionClauses(List<List<SupportAssignment>> conditionSupport, boolean positive,
-      boolean nextStep) {
-    for (Condition c: predicates.keySet()) {
+  protected void addConditionClauses(List<Set<Assignment>> conditionSupport, boolean positive, boolean nextStep) {
+    for (Condition c : predicates.keySet()) {
+      // System.out.println("Condition: " + c);
       int pNr = predicates.get(c);
-      for (SupportAssignment assignment : conditionSupport.get(pNr)) {
-        int oNr = operators.get(assignment.getOperator());
-        int[] clause = new int[2 + assignment.size()];
-        clause[0] = -getOperatorSatId(oNr);
+      for (Assignment assignment : conditionSupport.get(pNr)) {
+        int oNr = assignment.getOperatorId();
+        // System.out.println("Operator: " + oNr);
+        int[] clause = new int[assignment.size() + 1];
         for (int i = 0; i < assignment.size(); i++) {
-          clause[i + 1] = -getParameterSatId(oNr, assignment.getOperatorPos(i), assignment.getArgumentPos(c, i));
+          clause[i] = -getParameterSatId(oNr, assignment.getPosition(i), assignment.getArgumentId(i));
         }
-        clause[assignment.size() + 1] = (positive ? 1 : -1) * getPredicateSatId(pNr, nextStep);
+        clause[assignment.size()] = (positive ? 1 : -1) * getPredicateSatId(pNr, nextStep);
         if (nextStep) {
           transitionClauses.add(clause);
         } else {
@@ -299,48 +342,44 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
   }
 
   protected void addInterferenceClauses() {
-    for (Condition c: predicates.keySet()) {
+    for (Condition c : predicates.keySet()) {
       int pNr = predicates.get(c);
-      for (SupportAssignment effectAssignment : effectsPos.get(pNr)) {
-        int effectNr = operators.get(effectAssignment.getOperator());
-        for (SupportAssignment precondAssignment : preconditionsNeg.get(pNr)) {
-          int precondNr = operators.get(precondAssignment.getOperator());
-          if (effectNr == precondNr) {
+      for (Assignment effectAssignment : effectsPos.get(pNr)) {
+        int effectOperatorId = effectAssignment.getOperatorId();
+        for (Assignment precondAssignment : preconditionsNeg.get(pNr)) {
+          int precondOperatorId = precondAssignment.getOperatorId();
+          if (effectOperatorId == precondOperatorId) {
             continue;
           }
-          int[] clause = new int[2 + effectAssignment.size() + precondAssignment.size()];
-          clause[0] = -getOperatorSatId(effectNr);
-          clause[1] = -getOperatorSatId(precondNr);
-          int counter = 2;
+          int[] clause = new int[effectAssignment.size() + precondAssignment.size()];
+          int counter = 0;
           for (int i = 0; i < effectAssignment.size(); i++) {
-            clause[counter++] = -getParameterSatId(effectNr, effectAssignment.getOperatorPos(i),
-                effectAssignment.getArgumentPos(c, i));
+            clause[counter++] = -getParameterSatId(effectOperatorId, effectAssignment.getPosition(i),
+                effectAssignment.getArgumentId(i));
           }
           for (int i = 0; i < precondAssignment.size(); i++) {
-            clause[counter++] = -getParameterSatId(precondNr, precondAssignment.getOperatorPos(i),
-                precondAssignment.getArgumentPos(c, i));
+            clause[counter++] = -getParameterSatId(precondOperatorId, precondAssignment.getPosition(i),
+                precondAssignment.getArgumentId(i));
           }
           universalClauses.add(clause);
         }
       }
-      for (SupportAssignment effectAssignment : effectsNeg.get(pNr)) {
-        int effectNr = operators.get(effectAssignment.getOperator());
-        for (SupportAssignment precondAssignment : preconditionsPos.get(pNr)) {
-          int precondNr = operators.get(precondAssignment.getOperator());
-          if (effectNr == precondNr) {
+      for (Assignment effectAssignment : effectsNeg.get(pNr)) {
+        int effectOperatorId = effectAssignment.getOperatorId();
+        for (Assignment precondAssignment : preconditionsPos.get(pNr)) {
+          int precondOperatorId = precondAssignment.getOperatorId();
+          if (effectOperatorId == precondOperatorId) {
             continue;
           }
-          int[] clause = new int[2 + effectAssignment.size() + precondAssignment.size()];
-          clause[0] = -getOperatorSatId(effectNr);
-          clause[1] = -getOperatorSatId(precondNr);
-          int counter = 2;
+          int[] clause = new int[effectAssignment.size() + precondAssignment.size()];
+          int counter = 0;
           for (int i = 0; i < effectAssignment.size(); i++) {
-            clause[counter++] = -getParameterSatId(effectNr, effectAssignment.getOperatorPos(i),
-                effectAssignment.getArgumentPos(c, i));
+            clause[counter++] = -getParameterSatId(effectOperatorId, effectAssignment.getPosition(i),
+                effectAssignment.getArgumentId(i));
           }
           for (int i = 0; i < precondAssignment.size(); i++) {
-            clause[counter++] = -getParameterSatId(precondNr, precondAssignment.getOperatorPos(i),
-                precondAssignment.getArgumentPos(c, i));
+            clause[counter++] = -getParameterSatId(precondOperatorId, precondAssignment.getPosition(i),
+                precondAssignment.getArgumentId(i));
           }
           universalClauses.add(clause);
         }
@@ -349,75 +388,81 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
   }
 
   protected void addFrameAxioms() {
-    for (Condition c: predicates.keySet()) {
-      int pNr = predicates.get(c);
+    class SingleAssignment {
+      int operatorId;
+      int position;
+      int argumentId;
+
+      SingleAssignment(int operatorId, int position, int argumentId) {
+        this.operatorId = operatorId;
+        this.position = position;
+        this.argumentId = argumentId;
+      }
+
+      @Override
+      public String toString() {
+        return "[" + operatorId + "| " + position + ":" + argumentId + "]";
+      }
+    }
+    for (int pNr = 0; pNr < predicates.size(); pNr++) {
+      int copy = pNr;
       {
-        List<int[]> frameAxioms = new ArrayList<>();
-        frameAxioms.add(new int[2]);
-        frameAxioms.get(0)[0] = getPredicateSatId(pNr, false);
-        frameAxioms.get(0)[1] = -getPredicateSatId(pNr, true);
-        for (SupportAssignment effectAssignment : effectsPos.get(pNr)) {
-          int oNr = operators.get(effectAssignment.getOperator());
-          List<int[]> newFrameAxioms = new ArrayList<>();
-          for (int[] oldClause : frameAxioms) {
-            {
-              int[] clause = new int[oldClause.length + 1];
-              System.arraycopy(oldClause, 0, clause, 0, oldClause.length);
-              clause[clause.length - 1] = getOperatorSatId(oNr);
-              newFrameAxioms.add(clause);
+        List<List<SingleAssignment>> combinedArguments = new ArrayList<>();
+        for (Assignment assignment : effectsPos.get(pNr)) {
+          for (int i = 0; i < assignment.size(); i++) {
+            if (i >= combinedArguments.size()) {
+              combinedArguments.add(new ArrayList<>());
             }
-            for (int i = 0; i < effectAssignment.size(); i++) {
-              int[] clause = new int[oldClause.length + 1];
-              System.arraycopy(oldClause, 0, clause, 0, oldClause.length);
-              clause[clause.length - 1] = getParameterSatId(oNr, effectAssignment.getOperatorPos(i),
-                  effectAssignment.getArgumentPos(c, i));
-              newFrameAxioms.add(clause);
-            }
+            combinedArguments.get(i).add(new SingleAssignment(assignment.getOperatorId(), assignment.getPosition(i),
+                assignment.getArgumentId(i)));
           }
-          frameAxioms = newFrameAxioms;
         }
-        transitionClauses.addAll(frameAxioms);
+        System.out.println("CombinedArguments: " + combinedArguments);
+        ArgumentCombinationUtils.iterator(combinedArguments).forEachRemaining(args -> {
+          System.out.println(args);
+          int[] clause = new int[2 + args.size()];
+          clause[0] = getPredicateSatId(copy, false);
+          clause[1] = -getPredicateSatId(copy, true);
+          int counter = 2;
+          for (SingleAssignment arg : args) {
+            clause[counter++] = getParameterSatId(arg.operatorId, arg.position, arg.argumentId);
+          }
+          transitionClauses.add(clause);
+        });
       }
       {
-        List<int[]> frameAxioms = new ArrayList<>();
-        frameAxioms.add(new int[2]);
-        frameAxioms.get(0)[0] = -getPredicateSatId(pNr, false);
-        frameAxioms.get(0)[1] = getPredicateSatId(pNr, true);
-        for (SupportAssignment effectAssignment : effectsNeg.get(pNr)) {
-          int oNr = operators.get(effectAssignment.getOperator());
-          List<int[]> newFrameAxioms = new ArrayList<>();
-          for (int[] oldClause : frameAxioms) {
-            {
-              int[] clause = new int[oldClause.length + 1];
-              System.arraycopy(oldClause, 0, clause, 0, oldClause.length);
-              clause[clause.length - 1] = getOperatorSatId(oNr);
-              newFrameAxioms.add(clause);
+        List<List<SingleAssignment>> combinedArguments = new ArrayList<>();
+        for (Assignment assignment : effectsNeg.get(pNr)) {
+          for (int i = 0; i < assignment.size(); i++) {
+            if (i >= combinedArguments.size()) {
+              combinedArguments.add(new ArrayList<>());
             }
-            for (int i = 0; i < effectAssignment.size(); i++) {
-              int[] clause = new int[oldClause.length + 1];
-              System.arraycopy(oldClause, 0, clause, 0, oldClause.length);
-              clause[clause.length - 1] = getParameterSatId(oNr, effectAssignment.getOperatorPos(i),
-                  effectAssignment.getArgumentPos(c, i));
-              newFrameAxioms.add(clause);
-            }
+            combinedArguments.get(i).add(new SingleAssignment(assignment.getOperatorId(), assignment.getPosition(i),
+                assignment.getArgumentId(i)));
           }
-          frameAxioms = newFrameAxioms;
         }
-        transitionClauses.addAll(frameAxioms);
+        ArgumentCombinationUtils.iterator(combinedArguments).forEachRemaining(args -> {
+          int[] clause = new int[2 + args.size()];
+          clause[0] = -getPredicateSatId(copy, false);
+          clause[1] = getPredicateSatId(copy, true);
+          int counter = 2;
+          for (SingleAssignment arg : args) {
+            clause[counter++] = getParameterSatId(arg.operatorId, arg.position, arg.argumentId);
+          }
+          transitionClauses.add(clause);
+        });
       }
     }
   }
 
   protected void addForbiddenClauses() {
-    for (ForbiddenAssignment assignment : forbidden) {
-      int oNr = operators.get(assignment.getOperator());
+    for (Assignment assignment : forbidden) {
+      int oNr = assignment.getOperatorId();
+      int[] clause = new int[assignment.size()];
       for (int i = 0; i < assignment.size(); i++) {
-        int[] clause = new int[assignment.getPositions(i).size()];
-        for (int j = 0; j < assignment.getPositions(i).size(); j++) {
-          clause[j] = -getParameterSatId(oNr, assignment.getPositions(i).get(j), assignment.getArgumentPos(i).get(j));
-        }
-        universalClauses.add(clause);
+        clause[i] = -getParameterSatId(oNr, assignment.getPosition(i), assignment.getArgumentId(i));
       }
+      universalClauses.add(clause);
     }
   }
 
@@ -465,7 +510,14 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
   protected void setGoal() {
     ConditionSet goalSet = new ConditionSet(ConditionType.conjunction);
     problem.getGoals().forEach(c -> goalSet.add(c));
-    ConditionSet simpleSet = grounder.splitCondition(goalSet).getLeft();
+    Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(goalSet);
+    ConditionSet simpleSet = split.getLeft();
+    if (split.getRight() != null) {
+      if (split.getRight().getConditions().size() > 0) {
+        Logger.log(Logger.ERROR, "Goal contains complex set: " + split);
+        System.exit(1);
+      }
+    }
     goalClause = new int[simpleSet.getConditions().size()];
     int counter = 0;
     for (AbstractCondition c : simpleSet.getConditions()) {
@@ -506,24 +558,52 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     }
   }
 
-  class SupportAssignment {
-    Operator operator;
+  public ParameterMatching getParameterMatching(Operator o, Condition c) {
+    int operatorId = operators.get(o);
+    List<Integer> predicatePos = new ArrayList<>();
+    List<Integer> operatorPos = new ArrayList<>();
+    for (int i = 0; i < c.getArguments().size(); i++) {
+      Argument a = c.getArguments().get(i);
+      if (!a.isConstant()) {
+        predicatePos.add(i);
+        operatorPos.add(o.getArguments().indexOf(a));
+      }
+    }
+    return new ParameterMatching(operatorId, predicatePos, operatorPos);
+  }
+
+  public void addForbiddenConditions(Operator o, Condition c) {
+    ParameterMatching matching = getParameterMatching(o, c);
+    List<Argument> variableParameters = new ArrayList<>();
+    List<List<Argument>> eligible = new ArrayList<>();
+    for (int i = 0; i < matching.size(); i++) {
+      variableParameters.add(c.getArguments().get(matching.getPredicatePos(i)));
+      eligible.add(
+          new ArrayList<>(eligibleArguments.get(matching.getOperatorId()).get(matching.getOperatorPos(i)).keySet()));
+    }
+    ArgumentCombinationUtils.iterator(eligible).forEachRemaining(args -> {
+      Condition groundCondition = c.getConditionBoundToArguments(variableParameters, args);
+      if (!predicates.containsKey(groundCondition.withoutNegation())) {
+        List<Integer> position = new ArrayList<>();
+        List<Integer> argumentId = new ArrayList<>();
+        for (int i = 0; i < matching.size(); i++) {
+          position.add(matching.getOperatorPos(i));
+          argumentId.add(matching.getArgumentId(groundCondition, i));
+        }
+        forbidden.add(new Assignment(matching.getOperatorId(), position, argumentId));
+      }
+    });
+  }
+
+  class ParameterMatching {
     int operatorId;
     List<Integer> predicatePos;
     List<Integer> operatorPos;
 
-    public SupportAssignment(Operator o, Condition c) {
-      operator = o;
-      operatorId = operators.get(o);
-      predicatePos = new ArrayList<>();
-      operatorPos = new ArrayList<>();
-      for (int i = 0; i < c.getArguments().size(); i++) {
-        Argument a = c.getArguments().get(i);
-        if (!a.isConstant()) {
-          predicatePos.add(i);
-          operatorPos.add(o.getArguments().indexOf(a));
-        }
-      }
+    public ParameterMatching(int operatorId, List<Integer> predicatePos, List<Integer> operatorPos) {
+      this.operatorId = operatorId;
+      this.predicatePos = predicatePos;
+      this.operatorPos = operatorPos;
     }
 
     public int size() {
@@ -538,71 +618,79 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
       return operatorPos.get(i);
     }
 
-    public int getArgumentPos(Condition c, int i) {
-      return eligibleArguments.get(operatorId).get(getOperatorPos(i)).indexOf(c.getArguments().get(getPredicatePos(i)));
+    public int getArgumentId(Condition c, int i) {
+      return eligibleArguments.get(operatorId).get(getOperatorPos(i)).get(c.getArguments().get(getPredicatePos(i)));
     }
 
-    public Operator getOperator() {
-      return operator;
+    public int getOperatorId() {
+      return operatorId;
     }
   }
 
-  class ForbiddenAssignment {
-    Operator operator;
-    int operatorId;
-    List<List<Integer>> position;
-    List<List<Integer>> argumentPos;
+  class Assignment {
+    public int operatorId;
+    public List<Integer> position;
+    public List<Integer> argumentId;
 
-    public ForbiddenAssignment(Operator o) {
-      operator = o;
-      operatorId = operators.get(o);
-      position = new ArrayList<>();
-      argumentPos = new ArrayList<>();
-    }
-
-    public Operator getOperator() {
-      return operator;
-    }
-
-    public void addCondition(Condition c) {
-      SupportAssignment support = new SupportAssignment(operator, c);
-      List<List<Argument>> eligible = new ArrayList<>();
-      for (int i = 0; i < c.getArguments().size(); i++) {
-        List<Argument> constants = new ArrayList<>();
-        if (c.getArguments().get(i).isConstant()) {
-          constants.add(c.getArguments().get(i));
-        }
-        eligible.add(constants);
-      }
-      for (int i = 0; i < support.size(); i++) {
-        eligible.set(support.getPredicatePos(i), eligibleArguments.get(operatorId).get(support.getOperatorPos(i)));
-      }
-      ArgumentCombinationUtils.iterator(eligible).forEachRemaining(args -> {
-        Condition groundCondition = c.getConditionBoundToArguments(c.getArguments(), args);
-        if (!predicates.containsKey(groundCondition.withoutNegation())) {
-          List<Integer> assignmentPos = new ArrayList<>();
-          List<Integer> assignment = new ArrayList<>();
-          for (int i = 0; i < support.size(); i++) {
-            assignmentPos.add(support.getOperatorPos(i));
-            assignment.add(eligibleArguments.get(operatorId).get(support.getOperatorPos(i))
-                .indexOf(args.get(support.getPredicatePos(i))));
-          }
-          position.add(assignmentPos);
-          argumentPos.add(assignment);
-        }
-      });
+    public Assignment(int operatorId, List<Integer> position, List<Integer> argumentId) {
+      this.operatorId = operatorId;
+      this.position = position;
+      this.argumentId = argumentId;
     }
 
     public int size() {
       return position.size();
     }
 
-    public List<Integer> getPositions(int i) {
+    public int getOperatorId() {
+      return operatorId;
+    }
+
+    public int getPosition(int i) {
       return position.get(i);
     }
 
-    public List<Integer> getArgumentPos(int i) {
-      return argumentPos.get(i);
+    public int getArgumentId(int i) {
+      return argumentId.get(i);
+    }
+
+    @Override
+    public String toString() {
+      return "Operator " + operatorId + ": " + position + "|" + argumentId;
+    }
+
+    @Override
+    public int hashCode() {
+      final int prime = 31;
+      int result = 1;
+      result = prime * result + operatorId;
+      result = prime * result + position.hashCode();
+      result = prime * result + argumentId.hashCode();
+      return result;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (other == null) {
+        return false;
+      }
+      if (other.getClass() != getClass()) {
+        return false;
+      }
+      Assignment tmp = (Assignment) other;
+      if (operatorId != tmp.operatorId) {
+        return false;
+      }
+      if (!position.equals(tmp.position)) {
+        return false;
+      }
+      if (!argumentId.equals(tmp.argumentId)) {
+        return false;
+      }
+      return true;
     }
   }
 
@@ -613,14 +701,14 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
   protected Map<Condition, Integer> predicates;
   protected Map<Operator, Integer> operators;
   // Operator -> Pos -> Constants
-  protected List<List<List<Argument>>> eligibleArguments;
+  protected List<List<Map<Argument, Integer>>> eligibleArguments;
 
-  protected List<List<SupportAssignment>> preconditionsPos;
-  protected List<List<SupportAssignment>> preconditionsNeg;
-  protected List<List<SupportAssignment>> effectsPos;
-  protected List<List<SupportAssignment>> effectsNeg;
+  protected List<Set<Assignment>> preconditionsPos;
+  protected List<Set<Assignment>> preconditionsNeg;
+  protected List<Set<Assignment>> effectsPos;
+  protected List<Set<Assignment>> effectsNeg;
   // List -> (Operator/(List->(pos, nr)))
-  protected List<ForbiddenAssignment> forbidden;
+  protected Set<Assignment> forbidden;
 
   protected List<Integer> predicateSatId;
   protected List<Integer> operatorSatId;

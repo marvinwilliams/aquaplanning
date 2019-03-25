@@ -28,7 +28,7 @@ public abstract class LiftedPlanner extends Planner {
     case gLiftedSat:
       return new GroundLiftedSatPlanner(config);
     case hLiftedSat:
-      return new HelperLiftedSatPlanner(config);
+      // return new HelperLiftedSatPlanner(config);
     default:
       return null;
     }
