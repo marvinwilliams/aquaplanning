@@ -74,6 +74,8 @@ public abstract class Planner {
           return false;
         case hLiftedSat:
           return false;
+        case iLiftedSat:
+          return false;
 		}
 		return true;
 	}

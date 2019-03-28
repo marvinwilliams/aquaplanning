@@ -38,22 +38,12 @@ public abstract class LiftedPlanner extends Planner {
     case gLiftedSat:
       return new GroundLiftedSatPlanner(config);
     case hLiftedSat:
-      // return new HelperLiftedSatPlanner(config);
+      return new HelperLiftedSatPlanner(config);
+    case iLiftedSat:
+      return new IsolateLiftedSatPlanner(config);
     default:
       return null;
     }
-  }
-
-  protected int getPredicateSatId(int pNr, boolean nextStep) {
-    return predicateSatId.get(pNr) + (nextStep ? stepVars : 0);
-  }
-
-  protected int getOperatorSatId(int oNr) {
-    return operatorSatId.get(oNr);
-  }
-
-  protected int getParameterSatId(int oNr, int pos, int cNr) {
-    return parameterSatId.get(oNr).get(pos).get(cNr);
   }
 
   protected void nextStep() {
@@ -234,9 +224,6 @@ public abstract class LiftedPlanner extends Planner {
   protected List<Set<Assignment>> effectsNeg;
   protected Set<Assignment> forbidden;
 
-  protected List<Integer> predicateSatId;
-  protected List<Integer> operatorSatId;
-  protected List<List<List<Integer>>> parameterSatId;
   protected List<int[]> initialClauses;
   protected List<int[]> universalClauses;
   protected int[] goalClause;

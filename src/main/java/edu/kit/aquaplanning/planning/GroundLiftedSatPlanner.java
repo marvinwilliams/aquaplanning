@@ -544,6 +544,23 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     // System.out.println("Goal: " + goalClause);
   }
 
+  protected int getPredicateSatId(int pId, boolean nextStep) {
+    return predicateSatId.get(pId) + (nextStep ? stepVars : 0);
+  }
+
+  protected int getOperatorSatId(int oId) {
+    return operatorSatId.get(oId);
+  }
+
+  protected int getParameterSatId(int oId, int pos, int cId) {
+    return parameterSatId.get(oId).get(pos).get(cId);
+  }
+
+
+  protected List<Integer> predicateSatId;
+  protected List<Integer> operatorSatId;
+  protected List<List<List<Integer>>> parameterSatId;
+
   protected int satCounter;
   protected BiPredicate<Operator, Argument> isGrounded;
 }
