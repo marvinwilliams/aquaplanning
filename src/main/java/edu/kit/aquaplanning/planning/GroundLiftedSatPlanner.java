@@ -36,7 +36,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     Logger.log(Logger.INFO, "TIME0 Generate clauses");
     grounder = new RelaxedPlanningGraphGrounder(config);
     graph = grounder.computeGraph(p);
-    isGrounded = (o, a) -> a.getName().startsWith("?s");
+    isGrounded = (o, a) -> a.getName().startsWith("?room") && false;
     Logger.log(Logger.INFO, "TIME1");
     // initialize the SAT solver
     SatSolver solver = new SatSolver();
@@ -112,8 +112,9 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
         ConditionSet simpleSet = grounder.splitCondition(ac).getLeft();
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
-            Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
-            System.exit(1);
+            // Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
+            // System.exit(1);
+            continue;
           }
           Condition condition = (Condition) c;
           setForbiddenConditions(operator, condition);
@@ -208,16 +209,17 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
         Pair<ConditionSet, ConditionSet> split = isPrecondition ? grounder.splitCondition(newOperator.getPrecondition())
             : grounder.splitCondition(newOperator.getEffect());
         ConditionSet simpleSet = split.getLeft();
-        if (split.getRight() != null) {
-          if (split.getRight().getConditions().size() > 0) {
-            Logger.log(Logger.ERROR, "Precondition contains complex set: " + split);
-            System.exit(1);
-          }
-        }
+        // if (split.getRight() != null) {
+        //   if (split.getRight().getConditions().size() > 0) {
+        //     Logger.log(Logger.ERROR, "Precondition contains complex set: " + split);
+        //     System.exit(1);
+        //   }
+        // }
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
-            Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
-            System.exit(1);
+            // Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
+            // System.exit(1);
+            continue;
           }
           Condition condition = (Condition) c;
           ParameterMatching matching = getParameterMatching(newOperator, condition);
@@ -342,15 +344,6 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
           universalClauses.add(clause);
           numClauses++;
         }
-        // {
-        // // Parameter -> Operator
-        // for (int aId : arguments.values()) {
-        // int[] clause = new int[2];
-        // clause[0] = -getParameterSatId(oId, pos, aId);
-        // clause[1] = getOperatorSatId(oId);
-        // universalClauses.add(clause);
-        // }
-        // }
         {
           // <=1 per Parameter
           for (int aId1 : arguments.values()) {
@@ -525,12 +518,12 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     problem.getGoals().forEach(c -> goalSet.add(c));
     Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(goalSet);
     ConditionSet simpleSet = split.getLeft();
-    if (split.getRight() != null) {
-      if (split.getRight().getConditions().size() > 0) {
-        Logger.log(Logger.ERROR, "Goal contains complex set: " + split);
-        System.exit(1);
-      }
-    }
+    // if (split.getRight() != null) {
+    //   if (split.getRight().getConditions().size() > 0) {
+    //     Logger.log(Logger.ERROR, "Goal contains complex set: " + split);
+    //     System.exit(1);
+    //   }
+    // }
     goalClause = new int[simpleSet.getConditions().size()];
     int counter = 0;
     for (AbstractCondition c : simpleSet.getConditions()) {

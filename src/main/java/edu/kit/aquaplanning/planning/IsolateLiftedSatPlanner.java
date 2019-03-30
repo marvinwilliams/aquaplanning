@@ -153,9 +153,10 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
     ConditionSet simpleSet = grounder.splitCondition(ac).getLeft();
     for (AbstractCondition c : simpleSet.getConditions()) {
       if (c.getConditionType() != ConditionType.atomic) {
-        Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
-        Logger.log(Logger.WARN, "These conditions will be ignored");
+        // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
+        // Logger.log(Logger.WARN, "These conditions will be ignored");
         // System.exit(1);
+        continue;
       }
       Condition condition = (Condition) c;
       boolean hasVariable = false;
@@ -184,9 +185,10 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
         ConditionSet simpleSet = grounder.splitCondition(ac).getLeft();
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
-            Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
-            Logger.log(Logger.WARN, "These conditions will be ignored");
+            // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
+            // Logger.log(Logger.WARN, "These conditions will be ignored");
             // System.exit(1);
+            continue;
           }
           Condition condition = (Condition) c;
           setForbiddenConditions(operator, condition);
@@ -288,18 +290,19 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
         Pair<ConditionSet, ConditionSet> split = isPrecondition ? grounder.splitCondition(newOperator.getPrecondition())
             : grounder.splitCondition(newOperator.getEffect());
         ConditionSet simpleSet = split.getLeft();
-        if (split.getRight() != null) {
-          if (split.getRight().getConditions().size() > 0) {
-            Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition");
-            Logger.log(Logger.WARN, "These conditions will be ignored");
+        // if (split.getRight() != null) {
+        //   if (split.getRight().getConditions().size() > 0) {
+            // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition");
+            // Logger.log(Logger.WARN, "These conditions will be ignored");
             // System.exit(1);
-          }
-        }
+          // }
+        // }
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
-            Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
-            Logger.log(Logger.WARN, "These conditions will be ignored");
+            // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
+            // Logger.log(Logger.WARN, "These conditions will be ignored");
             // System.exit(1);
+            continue;
           }
           Condition condition = (Condition) c;
           ParameterMatching matching = getParameterMatching(newOperator, condition);
@@ -421,31 +424,6 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
           }
         }
         int numArgs = arguments.size();
-        // {
-        // // Operator -> each parameter
-        // int[] clause = new int[numArgs + 1];
-        // int counter = 0;
-        // clause[counter++] = -getOperatorSatId(oId);
-        // for (int aId : arguments.values()) {
-        // clause[counter++] = getParameterSatId(oId, pos, aId);
-        // }
-        // // System.out.print("Operator " + oId + " Param " + pos + ": [ ");
-        // // for (int i : clause) {
-        // // System.out.print(i + " ");
-        // // }
-        // // System.out.println("]");
-        // universalClauses.add(clause);
-        // numClauses++;
-        // }
-        // {
-        // // Parameter -> Operator
-        // for (int aId : arguments.values()) {
-        // int[] clause = new int[2];
-        // clause[0] = -getParameterSatId(oId, pos, aId);
-        // clause[1] = getOperatorSatId(oId);
-        // universalClauses.add(clause);
-        // }
-        // }
         {
           // Operator -> Parameter
           int[] clause = new int[numArgs + 1];
@@ -605,32 +583,6 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
         } else {
           support = effectsNeg.get(pId);
         }
-        // List<int[]> dnf = new ArrayList<>();
-        // dnf.add(new int[] { (isPositive ? 1 : -1) * getPredicateSatId(pId, false) });
-        // dnf.add(new int[] { (isPositive ? -1 : 1) * getPredicateSatId(pId, true) });
-        // for (Assignment assignment : support) {
-        // int[] clause = new int[assignment.size() + 1];
-        // int counter = 0;
-        // clause[counter++] = getOperatorSatId(assignment.getOperatorId());
-        // for (int i = 0; i < assignment.size(); i++) {
-        // clause[counter++] = getParameterSatId(assignment.getOperatorId(),
-        // assignment.getPosition(i),
-        // assignment.getArgumentId(i));
-        // }
-        // // System.out
-        // // .print("Predicate " + pId + " has support from " +
-        // assignment.getOperatorId() + ": [ ");
-        // // for (int i : clause) {
-        // // System.out.print(i + " ");
-        // // }
-        // // System.out.println("]");
-        // dnf.add(clause);
-        // }
-        // // System.out.println("DNF: " + dnf);
-        // // System.out.println("CNF: " + DNF2CNF(dnf));
-        // List<int[]> cnf = DNF2CNF(dnf);
-        // transitionClauses.addAll(cnf);
-        // numClauses += cnf.size();
         int[] clause = new int[support.size() + 2];
         int counter = 0;
         clause[counter++] = (isPositive ? 1 : -1) * getPredicateSatId(pId, false);
@@ -674,13 +626,13 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
     problem.getGoals().forEach(c -> goalSet.add(c));
     Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(goalSet);
     ConditionSet simpleSet = split.getLeft();
-    if (split.getRight() != null) {
-      if (split.getRight().getConditions().size() > 0) {
-        Logger.log(Logger.WARN, "Goal contains complex set: " + split);
-        Logger.log(Logger.WARN, "These conditions will be ignored");
+    // if (split.getRight() != null) {
+    //   if (split.getRight().getConditions().size() > 0) {
+        // Logger.log(Logger.WARN, "Goal contains complex set: " + split);
+        // Logger.log(Logger.WARN, "These conditions will be ignored");
         // System.exit(1);
-      }
-    }
+      // }
+    // }
     goalClause = new int[simpleSet.getConditions().size()];
     int counter = 0;
     for (AbstractCondition c : simpleSet.getConditions()) {
