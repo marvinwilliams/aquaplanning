@@ -87,13 +87,20 @@ public class Configuration {
 	 */
 	
 	public enum PlannerType {
-		forwardSSS, satBased, hegemannSat, parallel, pLiftedSat, gLiftedSat, hLiftedSat, iLiftedSat;
+		forwardSSS, satBased, hegemannSat, parallel, pLiftedSat, gLiftedSat, hLiftedSat, iLiftedSat, eLiftedSat;
 	}
 	@Option(paramLabel = "plannerType", names = {"-p", "--planner"}, 
 			description = "Planner type to use: " + USAGE_OPTIONS_AND_DEFAULT, 
 			defaultValue = "forwardSSS")
 	public PlannerType plannerType;
 	
+	public enum SatSolverType {
+        minisat, picosat, glucose;
+	}
+	@Option(paramLabel = "satSolver", names = {"-ss", "--satsolver"}, 
+			description = "Satsolver to use: " + USAGE_OPTIONS_AND_DEFAULT, 
+			defaultValue = "minisat")
+	public SatSolverType satSolver;
 	/* Forward search space planning */
 	
 	public enum HeuristicType {

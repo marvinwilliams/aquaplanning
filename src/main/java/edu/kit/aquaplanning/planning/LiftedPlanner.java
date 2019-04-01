@@ -48,6 +48,8 @@ public abstract class LiftedPlanner extends Planner {
       return new HelperLiftedSatPlanner(config);
     case iLiftedSat:
       return new IsolateLiftedSatPlanner(config);
+    case eLiftedSat:
+      return new ExistsLiftedSatPlanner(config);
     default:
       return null;
     }
@@ -222,7 +224,7 @@ public abstract class LiftedPlanner extends Planner {
     solution.steps = -1;
     try {
       File file = File.createTempFile("cnf", ".cnf");
-      // file.deleteOnExit();
+      file.deleteOnExit();
       FileWriter writer = new FileWriter(file);
       {
         String header = "i cnf " + stepVars + " " + initialClauses.size() + "\n";
@@ -262,7 +264,24 @@ public abstract class LiftedPlanner extends Planner {
       writer.close();
       Runtime run = Runtime.getRuntime();
       Logger.log(Logger.INFO, "TIME2 Running incplan");
-      Process proc = run.exec("./incplan-minisat220 " + file.getPath());
+      Process proc = null;
+      switch (config.satSolver) {
+        case minisat:
+          Logger.log(Logger.INFO, "Using minisat");
+          proc = run.exec("./incplan-minisat220 " + file.getPath());
+          break;
+        case picosat:
+          Logger.log(Logger.INFO, "Using picosat");
+          proc = run.exec("./incplan-picosat961 " + file.getPath());
+          break;
+        case glucose:
+          Logger.log(Logger.INFO, "Using glucose");
+          proc = run.exec("./incplan-glucose4 " + file.getPath());
+          break;
+        default:
+          Logger.log(Logger.ERROR, "Sat solver unrecoginzed");
+          System.exit(1);
+      }
       proc.waitFor();
       Logger.log(Logger.INFO, "TIME3 Finished");
       BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()));
