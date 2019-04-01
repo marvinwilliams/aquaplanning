@@ -19,7 +19,6 @@ import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition;
 import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
 import edu.kit.aquaplanning.model.lifted.condition.Condition;
 import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
-import edu.kit.aquaplanning.sat.SatSolver;
 import edu.kit.aquaplanning.util.Logger;
 import edu.kit.aquaplanning.util.Pair;
 
@@ -32,38 +31,54 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
   @Override
   public Plan findPlan(PlanningProblem p) {
     problem = p;
-    Logger.log(Logger.INFO, "TIME0 Generate clauses");
+    Logger.log(Logger.INFO, "TIME0 Grounding");
     grounder = new RelaxedPlanningGraphGrounder(config);
     graph = grounder.computeGraph(p);
-    Logger.log(Logger.INFO, "TIME1");
     // initialize the SAT solver
-    SatSolver solver = new SatSolver();
+    // SatSolver solver = new SatSolver();
+    Logger.log(Logger.INFO, "TIME1 Generating clauses");
     initIDs();
     generateClauses();
-
-    int step = 0;
-
-    for (int[] clause : initialClauses) {
-      solver.addClause(clause);
+    Solution solution = incPlan();
+    if (solution.steps == -1) {
+      Logger.log(Logger.ERROR, "No solution found");
+      System.exit(1);
     }
-    Logger.log(Logger.INFO, "TIME2 Starting solver");
-    while (true) {
-      for (int[] clause : universalClauses) {
-        solver.addClause(clause);
-      }
-      if (solver.isSatisfiable(goalClause)) {
-        Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
-        break;
-      }
-      Logger.log(Logger.INFO, "No solution found in step " + step);
-      for (int[] clause : transitionClauses) {
-        solver.addClause(clause);
-      }
-      nextStep();
-      step++;
-    }
+    Logger.log(Logger.INFO, "Makespan " + (solution.steps - 1));
+
+    // for (int[] clause : initialClauses) {
+    //   solver.addClause(clause);
+    // }
+    // Logger.log(Logger.INFO, "TIME2 Starting solver");
+    // int step = 0;
+    // while (true) {
+    //   for (int[] clause : universalClauses) {
+    //     solver.addClause(clause);
+    //   }
+    //   if (solver.isSatisfiable(goalClause)) {
+    //     Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
+    //     break;
+    //   }
+    //   Logger.log(Logger.INFO, "No solution found in step " + step);
+    //   for (int[] clause : transitionClauses) {
+    //     solver.addClause(clause);
+    //   }
+    //   nextStep();
+    //   step++;
+    // }
     grounder.ground(problem);
-    return extractPlan(solver.getModel(), step);
+    // return extractPlan(solver.getModel(), step);
+    // System.out.println("Satsolver: " + step);
+    // System.out.println("Satsolver: " + solver.getModel().length);
+    // for (int i: solver.getModel()) {
+    //   System.out.print(i + " ");
+    // }
+    // System.out.println("Incplan: " + solution.steps);
+    // System.out.println("Incplan: " + solution.model.length);
+    // for (int i: solution.model) {
+    //   System.out.print(i + " ");
+    // }
+    return extractPlan(solution.model, solution.steps);
   }
 
   protected Plan extractPlan(int[] model, int steps) {

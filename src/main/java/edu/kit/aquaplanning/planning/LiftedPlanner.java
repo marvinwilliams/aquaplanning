@@ -1,9 +1,15 @@
 package edu.kit.aquaplanning.planning;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.RelaxedPlanningGraph;
@@ -13,6 +19,7 @@ import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
 import edu.kit.aquaplanning.model.lifted.condition.Condition;
+import edu.kit.aquaplanning.util.Logger;
 
 /**
  * Blueprint for a planner operating on the lifted problem.
@@ -203,6 +210,92 @@ public abstract class LiftedPlanner extends Planner {
         DNF2CNF(dnf, depth + 1, result, tmp);
       }
     }
+  }
+
+  class Solution {
+    int[] model;
+    int steps;
+  }
+
+  protected Solution incPlan() {
+    Solution solution = new Solution();
+    solution.steps = -1;
+    try {
+      File file = File.createTempFile("cnf", ".cnf");
+      // file.deleteOnExit();
+      FileWriter writer = new FileWriter(file);
+      {
+        String header = "i cnf " + stepVars + " " + initialClauses.size() + "\n";
+        writer.write(header);
+        for (int[] clause : initialClauses) {
+          String line = Arrays.stream(clause).mapToObj(String::valueOf).collect(Collectors.joining(" "));
+          line += " 0\n";
+          writer.write(line);
+        }
+      }
+      {
+        String header = "u cnf " + stepVars + " " + universalClauses.size() + "\n";
+        writer.write(header);
+        for (int[] clause : universalClauses) {
+          String line = Arrays.stream(clause).mapToObj(String::valueOf).collect(Collectors.joining(" "));
+          line += " 0\n";
+          writer.write(line);
+        }
+      }
+      {
+        String header = "g cnf " + stepVars + " " + goalClause.length + "\n";
+        writer.write(header);
+        for (int g : goalClause) {
+          String line = g + " 0\n";
+          writer.write(line);
+        }
+      }
+      {
+        String header = "t cnf " + 2 * stepVars + " " + transitionClauses.size() + "\n";
+        writer.write(header);
+        for (int[] clause : transitionClauses) {
+          String line = Arrays.stream(clause).mapToObj(String::valueOf).collect(Collectors.joining(" "));
+          line += " 0\n";
+          writer.write(line);
+        }
+      }
+      writer.close();
+      Runtime run = Runtime.getRuntime();
+      Logger.log(Logger.INFO, "TIME2 Running incplan");
+      Process proc = run.exec("./incplan-minisat220 " + file.getPath());
+      proc.waitFor();
+      Logger.log(Logger.INFO, "TIME3 Finished");
+      BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()));
+      String outline;
+      int numSteps = -1;
+      int numVars = -1;
+      while ((outline = reader.readLine()) != null) {
+        if (outline.startsWith("solution")) {
+          numVars = Integer.valueOf(outline.split(" ")[1]);
+          numSteps = Integer.valueOf(outline.split(" ")[2]);
+          break;
+        }
+      }
+      int[] model = new int[numVars * numSteps + 1];
+      int stepCounter = 0;
+      int i = 1;
+      while ((outline = reader.readLine()) != null) {
+        if (stepCounter == numSteps) {
+          break;
+        }
+        // System.out.println(outline);
+        for (String vStr : outline.split(" ")) {
+          int v = Integer.valueOf(vStr);
+          model[i++] = v;
+        }
+        stepCounter++;
+      }
+      solution.steps = numSteps;
+      solution.model = model;
+    } catch (Exception e) {
+      Logger.log(Logger.ERROR, "Error calling external program");
+    }
+    return solution;
   }
 
   @Override
