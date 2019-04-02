@@ -289,6 +289,9 @@ public abstract class LiftedPlanner extends Planner {
       int numSteps = -1;
       int numVars = -1;
       while ((outline = reader.readLine()) != null) {
+        if (outline.startsWith("c ") || outline.startsWith("ci ")) {
+          Logger.log(Logger.INFO, outline);
+        }
         if (outline.startsWith("solution")) {
           numVars = Integer.valueOf(outline.split(" ")[1]);
           numSteps = Integer.valueOf(outline.split(" ")[2]);
@@ -308,6 +311,13 @@ public abstract class LiftedPlanner extends Planner {
           model[i++] = v;
         }
         stepCounter++;
+      }
+      while ((outline = reader.readLine()) != null) {
+        if (outline.startsWith("c ") || outline.startsWith("ci ")) {
+          Logger.log(Logger.INFO, outline);
+        } else {
+          break;
+        }
       }
       solution.steps = numSteps;
       solution.model = model;

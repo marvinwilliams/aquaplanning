@@ -99,7 +99,7 @@ public class Configuration {
 	}
 	@Option(paramLabel = "satSolver", names = {"-ss", "--satsolver"}, 
 			description = "Satsolver to use: " + USAGE_OPTIONS_AND_DEFAULT, 
-			defaultValue = "minisat")
+			defaultValue = "glucose")
 	public SatSolverType satSolver;
 	/* Forward search space planning */
 	

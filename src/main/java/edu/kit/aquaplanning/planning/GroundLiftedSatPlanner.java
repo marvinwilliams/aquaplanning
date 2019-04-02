@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BiPredicate;
 
+import edu.kit.aquaplanning.sat.SatSolver;
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.ArgumentCombinationUtils;
 import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
@@ -47,6 +48,27 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
       System.exit(1);
     }
     Logger.log(Logger.INFO, "Makespan " + (solution.steps - 1));
+    // int step = 0;
+
+    // for (int[] clause : initialClauses) {
+    //   solver.addClause(clause);
+    // }
+    // Logger.log(Logger.INFO, "TIME2 Starting solver");
+    // while (true) {
+    //   if (solver.isSatisfiable(goalClause)) {
+    //     Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
+    //     break;
+    //   }
+    //   Logger.log(Logger.INFO, "No solution found in step " + step);
+    //   for (int[] clause : universalClauses) {
+    //     solver.addClause(clause);
+    //   }
+    //   for (int[] clause : transitionClauses) {
+    //     solver.addClause(clause);
+    //   }
+    //   nextStep();
+    //   step++;
+    // }
 
     // for (int[] clause : initialClauses) {
     //   solver.addClause(clause);
@@ -81,6 +103,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     //   System.out.print(i + " ");
     // }
     return extractPlan(solution.model, solution.steps);
+    // return extractPlan(solver.getModel(), step);
   }
 
   protected Plan extractPlan(int[] model, int steps) {
@@ -124,7 +147,14 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     forbidden = new HashSet<>();
     for (Operator operator : operators.keySet()) {
       for (AbstractCondition ac : Arrays.asList(operator.getPrecondition(), operator.getEffect())) {
-        ConditionSet simpleSet = grounder.splitCondition(ac).getLeft();
+        Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(ac);
+        ConditionSet simpleSet = split.getLeft();
+        for (AbstractCondition c: split.getRight().getConditions()) {
+          if (c.getConditionType() != ConditionType.numericEffect) {
+            Logger.log(Logger.ERROR, "Condition contains complex set: " + split);
+            System.exit(1);
+          }
+        }
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
             // Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
@@ -151,6 +181,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     preconditionsNeg = new ArrayList<>();
     effectsPos = new ArrayList<>();
     effectsNeg = new ArrayList<>();
+    rigidConditions = new HashSet<>();
     for (Condition p : graph.getLiftedState(graph.getCurrentLayer())) {
       // System.out.println(p);
       predicates.put(p, predicates.size());
@@ -224,28 +255,36 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
         Pair<ConditionSet, ConditionSet> split = isPrecondition ? grounder.splitCondition(newOperator.getPrecondition())
             : grounder.splitCondition(newOperator.getEffect());
         ConditionSet simpleSet = split.getLeft();
-        // if (split.getRight() != null) {
-        //   if (split.getRight().getConditions().size() > 0) {
-        //     Logger.log(Logger.ERROR, "Precondition contains complex set: " + split);
-        //     System.exit(1);
-        //   }
-        // }
+        for (AbstractCondition c: split.getRight().getConditions()) {
+          if (c.getConditionType() != ConditionType.numericEffect) {
+            Logger.log(Logger.ERROR, "Condition contains complex set: " + split);
+            System.exit(1);
+          }
+        }
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
-            // Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
-            // System.exit(1);
-            continue;
+            Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
+            System.exit(1);
+            // continue;
           }
           Condition condition = (Condition) c;
           ParameterMatching matching = getParameterMatching(newOperator, condition);
           Condition groundCondition = condition.getConditionBoundToArguments(newOperator.getArguments(),
               groundedOperator.getArguments());
+
+          if (predicates.get(groundCondition.withoutNegation()) == null) {
+          //   // rigid
+            rigidConditions.add(groundCondition.withoutNegation());
+            // System.out.println("Rigid: " + groundCondition.withoutNegation());
+            continue;
+          }
           List<Integer> position = new ArrayList<>();
           List<Integer> argumentId = new ArrayList<>();
+          // System.out.println("for ground operator " + groundedOperator);
           // System.out.println("for operator " + newOperator);
           // System.out.println("Arguments: " + eligibleArguments.get(operatorId));
-          // System.out.println("Predicate: " + precondition);
-          // System.out.println("GroundPredicate: " + groundPrecondition);
+          // System.out.println("Predicate: " + condition);
+          // System.out.println("GroundPredicate: " + groundCondition);
           for (int i = 0; i < matching.size(); i++) {
             position.add(matching.getOperatorPos(i));
             argumentId.add(matching.getArgumentId(groundCondition, i));
@@ -253,19 +292,23 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
           // System.out.println("Positions: " + position);
           // System.out.println("Ids: " + argumentId);
           if (groundCondition.isNegated()) {
-            if (isPrecondition) {
-              preconditionsNeg.get(predicates.get(groundCondition.withoutNegation()))
+            if (!rigidConditions.contains(groundCondition.withoutNegation())) {
+              if (isPrecondition) {
+                preconditionsNeg.get(predicates.get(groundCondition.withoutNegation()))
                   .add(new Assignment(operatorId, position, argumentId));
-            } else {
-              effectsNeg.get(predicates.get(groundCondition.withoutNegation()))
+              } else {
+                effectsNeg.get(predicates.get(groundCondition.withoutNegation()))
                   .add(new Assignment(operatorId, position, argumentId));
+              }
             }
           } else {
-            if (isPrecondition) {
-              preconditionsPos.get(predicates.get(groundCondition))
+            if (!rigidConditions.contains(groundCondition)) {
+              if (isPrecondition) {
+                preconditionsPos.get(predicates.get(groundCondition))
                   .add(new Assignment(operatorId, position, argumentId));
-            } else {
-              effectsPos.get(predicates.get(groundCondition)).add(new Assignment(operatorId, position, argumentId));
+              } else {
+                effectsPos.get(predicates.get(groundCondition)).add(new Assignment(operatorId, position, argumentId));
+              }
             }
           }
         }
@@ -290,7 +333,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     }
     ArgumentCombinationUtils.iterator(eligible).forEachRemaining(args -> {
       Condition groundCondition = c.getConditionBoundToArguments(variableParameters, args);
-      if (!predicates.containsKey(groundCondition.withoutNegation())) {
+      if (!predicates.containsKey(groundCondition.withoutNegation()) && !rigidConditions.contains(groundCondition.withoutNegation())) {
         // System.out.println("Forbidden for operator " + operators.get(o) + ": " + args);
         List<Integer> position = new ArrayList<>();
         List<Integer> argumentId = new ArrayList<>();
@@ -568,6 +611,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
   protected List<Integer> predicateSatId;
   protected List<Integer> operatorSatId;
   protected List<List<List<Integer>>> parameterSatId;
+  protected Set<Condition> rigidConditions;
 
   protected int satCounter;
   protected BiPredicate<Operator, Argument> isGrounded;
