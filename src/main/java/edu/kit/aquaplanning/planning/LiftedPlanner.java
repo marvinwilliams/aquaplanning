@@ -48,6 +48,8 @@ public abstract class LiftedPlanner extends Planner {
       return new HelperLiftedSatPlanner(config);
     case iLiftedSat:
       return new IsolateLiftedSatPlanner(config);
+    case i2LiftedSat:
+      return new Isolate2LiftedSatPlanner(config);
     case eLiftedSat:
       return new ExistsLiftedSatPlanner(config);
     default:
