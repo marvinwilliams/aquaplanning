@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.ArgumentCombinationUtils;
 import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
@@ -47,36 +48,36 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     Logger.log(Logger.INFO, "Makespan " + (solution.steps - 1));
 
     // for (int[] clause : initialClauses) {
-    //   solver.addClause(clause);
+    // solver.addClause(clause);
     // }
     // Logger.log(Logger.INFO, "TIME2 Starting solver");
     // int step = 0;
     // while (true) {
-    //   for (int[] clause : universalClauses) {
-    //     solver.addClause(clause);
-    //   }
-    //   if (solver.isSatisfiable(goalClause)) {
-    //     Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
-    //     break;
-    //   }
-    //   Logger.log(Logger.INFO, "No solution found in step " + step);
-    //   for (int[] clause : transitionClauses) {
-    //     solver.addClause(clause);
-    //   }
-    //   nextStep();
-    //   step++;
+    // for (int[] clause : universalClauses) {
+    // solver.addClause(clause);
+    // }
+    // if (solver.isSatisfiable(goalClause)) {
+    // Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
+    // break;
+    // }
+    // Logger.log(Logger.INFO, "No solution found in step " + step);
+    // for (int[] clause : transitionClauses) {
+    // solver.addClause(clause);
+    // }
+    // nextStep();
+    // step++;
     // }
     grounder.ground(problem);
     // return extractPlan(solver.getModel(), step);
     // System.out.println("Satsolver: " + step);
     // System.out.println("Satsolver: " + solver.getModel().length);
     // for (int i: solver.getModel()) {
-    //   System.out.print(i + " ");
+    // System.out.print(i + " ");
     // }
     // System.out.println("Incplan: " + solution.steps);
     // System.out.println("Incplan: " + solution.model.length);
     // for (int i: solution.model) {
-    //   System.out.print(i + " ");
+    // System.out.print(i + " ");
     // }
     return extractPlan(solution.model, solution.steps);
   }
@@ -86,37 +87,27 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     for (int base = 0; base < steps * stepVars; base += stepVars) {
       for (Operator o : operators.keySet()) {
         int i = operators.get(o);
-        List<Argument> args = new ArrayList<>();
-        // System.out.println(o);
-        boolean applyAction = false;
-        if (dummy.get(i) != null && model[dummy.get(i) + base] > 0) {
-          applyAction = true;
-        } else {
+        if (model[getOperatorSatId(i) + base] > 0) {
+          List<Argument> args = new ArrayList<>();
           for (int j = 0; j < o.getArguments().size(); j++) {
             if (o.getArguments().get(j).isConstant()) {
               args.add(null);
               continue;
             }
-            if (model[getOperatorSatId(i, j) + base] > 0) {
-              applyAction = true;
-              // System.out.println("Found " + i + " " + j);
-              boolean found = eligibleArguments.get(i).get(j).size() == 0;
-              for (Argument arg : eligibleArguments.get(i).get(j).keySet()) {
-                int k = eligibleArguments.get(i).get(j).get(arg);
-                if (model[getParameterSatId(i, j, k) + base] >= 0) {
-                  args.add(arg);
-                  found = true;
-                  break;
-                }
-              }
-              if (!found) {
-                Logger.log(Logger.ERROR, "Parameter not set in solution");
-                System.exit(1);
+            boolean found = eligibleArguments.get(i).get(j).size() == 0;
+            for (Argument arg : eligibleArguments.get(i).get(j).keySet()) {
+              int k = eligibleArguments.get(i).get(j).get(arg);
+              if (model[getParameterSatId(i, j, k) + base] >= 0) {
+                args.add(arg);
+                found = true;
+                break;
               }
             }
+            if (!found) {
+              Logger.log(Logger.ERROR, "Parameter not set in solution");
+              System.exit(1);
+            }
           }
-        }
-        if (applyAction) {
           Operator go = o.getOperatorWithGroundArguments(args);
           plan.appendAtBack(grounder.getAction(go));
         }
@@ -127,48 +118,57 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
 
   protected void computeGrounding(Operator o) {
     List<Integer> groundPos = new ArrayList<>();
+    int best = -1;
     for (int i = 0; i <= o.getArguments().size(); i++) {
-      if (computeGrounding(o, i, groundPos, 0)) {
-        break;
+      int tmp = computeGrounding(o, i, groundPos, 0, best);
+      if (tmp > -1 && (tmp < best || best == -1)) {
+        best = tmp;
       }
     }
   }
 
-  protected boolean computeGrounding(Operator o, int numArgs, List<Integer> current, int pos) {
+  protected int computeGrounding(Operator o, int numArgs, List<Integer> current, int pos, int oldBest) {
     if (numArgs == 0) {
-      if (testGrounding(o, current)) {
+      int res = testGrounding(o, current);
+      if (res > -1 && (res < oldBest || oldBest < 0)) {
         operatorGrounding.put(o, current);
-        return true;
+        return res;
       }
-      return false;
+      return -1;
     }
     while (pos + numArgs <= o.getArguments().size()) {
       if (!o.getArguments().get(pos).isConstant()) {
         List<Integer> tmp = new ArrayList<>(current);
         tmp.add(pos);
-        if (computeGrounding(o, numArgs - 1, tmp, pos + 1)) {
-          return true;
+        int res = computeGrounding(o, numArgs - 1, tmp, pos + 1, oldBest);
+        if (res > -1 && (res < oldBest || oldBest < 0)) {
+          oldBest = res;
         }
       }
       pos++;
     }
-    return false;
+    return oldBest;
   }
 
-  protected boolean testGrounding(Operator o, List<Integer> groundPos) {
+  protected int testGrounding(Operator o, List<Integer> groundPos) {
     List<Argument> args = new ArrayList<>();
     for (int i = 0; i < o.getArguments().size(); i++) {
       args.add(null);
     }
+    int numOperators = 1;
     for (int i = 0; i < groundPos.size(); i++) {
       args.set(groundPos.get(i), new Argument("test", new Type("test")));
+      if (groundPos.get(i) != null) {
+        numOperators *= getConstantsOfType(o.getArguments().get(groundPos.get(i)).getType()).size();
+      }
     }
     Operator groundedOperator = o.getOperatorWithGroundArguments(args);
     AbstractCondition ac = groundedOperator.getEffect();
     ConditionSet simpleSet = grounder.splitCondition(ac).getLeft();
     for (AbstractCondition c : simpleSet.getConditions()) {
       if (c.getConditionType() != ConditionType.atomic) {
-        // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
+        // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic
+        // condition " + c + ".");
         // Logger.log(Logger.WARN, "These conditions will be ignored");
         // System.exit(1);
         continue;
@@ -178,7 +178,7 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
       for (Argument a : condition.getArguments()) {
         if (!a.isConstant()) {
           if (hasVariable) {
-            return false;
+            return -1;
           } else {
             hasVariable = true;
           }
@@ -187,20 +187,29 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     }
     // System.out.println("Lifted: " + o);
     // System.out.println("Grounded: " + groundedOperator);
-    return true;
+    return numOperators;
   }
 
   protected void initIDs() {
     satCounter = 1;
+    constants = problem.getConstants();
     setPredicateIDs();
     setOperatorIDs();
     forbidden = new HashSet<>();
     for (Operator operator : operators.keySet()) {
       for (AbstractCondition ac : Arrays.asList(operator.getPrecondition(), operator.getEffect())) {
-        ConditionSet simpleSet = grounder.splitCondition(ac).getLeft();
+        Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(ac);
+        ConditionSet simpleSet = split.getLeft();
+        for (AbstractCondition c : split.getRight().getConditions()) {
+          if (c.getConditionType() != ConditionType.numericEffect) {
+            Logger.log(Logger.ERROR, "Condition contains complex set: " + split);
+            System.exit(1);
+          }
+        }
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
-            // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
+            // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic
+            // condition " + c + ".");
             // Logger.log(Logger.WARN, "These conditions will be ignored");
             // System.exit(1);
             continue;
@@ -225,12 +234,12 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     preconditionsNeg = new ArrayList<>();
     effectsPos = new ArrayList<>();
     effectsNeg = new ArrayList<>();
-    implicationChainPos = new ArrayList<>();
-    implicationChainNeg = new ArrayList<>();
-    implicationChainLastPos = new ArrayList<>();
-    implicationChainLastNeg = new ArrayList<>();
-    implicationChainPosSatId = new ArrayList<>();
-    implicationChainNegSatId = new ArrayList<>();
+    rigidConditions = new HashSet<>();
+    chainImpliesPos = new ArrayList<>();
+    chainImpliesNeg = new ArrayList<>();
+    implyChainPos = new ArrayList<>();
+    implyChainNeg = new ArrayList<>();
+    chainSatId = new ArrayList<>();
     for (Condition p : graph.getLiftedState(graph.getCurrentLayer())) {
       // System.out.println(p);
       predicates.put(p, predicates.size());
@@ -239,12 +248,11 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
       preconditionsNeg.add(new HashSet<>());
       effectsPos.add(new HashSet<>());
       effectsNeg.add(new HashSet<>());
-      implicationChainPos.add(new ArrayList<>());
-      implicationChainNeg.add(new ArrayList<>());
-      implicationChainLastPos.add(new HashMap<>());
-      implicationChainLastNeg.add(new HashMap<>());
-      implicationChainPosSatId.add(new HashMap<>());
-      implicationChainNegSatId.add(new HashMap<>());
+      chainImpliesPos.add(new ArrayList<>());
+      chainImpliesNeg.add(new ArrayList<>());
+      implyChainPos.add(new HashMap<>());
+      implyChainNeg.add(new HashMap<>());
+      chainSatId.add(new ArrayList<>());
     }
   }
 
@@ -254,7 +262,6 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     parameterSatId = new ArrayList<>();
     eligibleArguments = new ArrayList<>();
     operatorGrounding = new HashMap<>();
-    dummy = new ArrayList<>();
     Map<String, Operator> operatorLookup = new HashMap<>();
     problem.getOperators().forEach(o -> operatorLookup.put(o.getName(), o));
     problem.getOperators().forEach(o -> computeGrounding(o));
@@ -276,26 +283,17 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
         operatorId = operators.size();
         // System.out.println("New operator " + operatorId + ": " + newOperator);
         operators.put(newOperator, operatorId);
-        operatorSatId.add(new ArrayList<>());
+        operatorSatId.add(satCounter++);
         List<Map<Argument, Integer>> operatorArguments = new ArrayList<>();
         List<List<Integer>> satId = new ArrayList<>();
-        boolean hasVariable = false;
         for (int i = 0; i < numParameters; i++) {
           if (newOperator.getArguments().get(i).isConstant()) {
             satId.add(null);
             operatorArguments.add(null);
-            operatorSatId.get(operatorId).add(null);
           } else {
-            hasVariable = true;
             satId.add(new ArrayList<>());
             operatorArguments.add(new HashMap<>());
-            operatorSatId.get(operatorId).add(satCounter++);
           }
-        }
-        if (hasVariable) {
-          dummy.add(null);
-        } else {
-          dummy.add(satCounter++);
         }
         parameterSatId.add(satId);
         eligibleArguments.add(operatorArguments);
@@ -317,24 +315,29 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
         Pair<ConditionSet, ConditionSet> split = isPrecondition ? grounder.splitCondition(newOperator.getPrecondition())
             : grounder.splitCondition(newOperator.getEffect());
         ConditionSet simpleSet = split.getLeft();
-        // if (split.getRight() != null) {
-        //   if (split.getRight().getConditions().size() > 0) {
-            // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition");
-            // Logger.log(Logger.WARN, "These conditions will be ignored");
-            // System.exit(1);
-          // }
-        // }
+        for (AbstractCondition c : split.getRight().getConditions()) {
+          if (c.getConditionType() != ConditionType.numericEffect) {
+            Logger.log(Logger.ERROR, "Condition contains complex set: " + split);
+            System.exit(1);
+          }
+        }
         for (AbstractCondition c : simpleSet.getConditions()) {
           if (c.getConditionType() != ConditionType.atomic) {
-            // Logger.log(Logger.WARN, "A simple set of conditions contains non-atomic condition " + c + ".");
-            // Logger.log(Logger.WARN, "These conditions will be ignored");
-            // System.exit(1);
-            continue;
+            Logger.log(Logger.ERROR, "A simple set of conditions contains non-atomic condition " + c + ".");
+            System.exit(1);
+            // continue;
           }
           Condition condition = (Condition) c;
           ParameterMatching matching = getParameterMatching(newOperator, condition);
           Condition groundCondition = condition.getConditionBoundToArguments(newOperator.getArguments(),
               groundedOperator.getArguments());
+
+          if (predicates.get(groundCondition.withoutNegation()) == null) {
+            // // rigid
+            rigidConditions.add(groundCondition.withoutNegation());
+            // System.out.println("Rigid: " + groundCondition.withoutNegation());
+            continue;
+          }
           List<Integer> position = new ArrayList<>();
           List<Integer> argumentId = new ArrayList<>();
           // System.out.println("for operator " + newOperator);
@@ -347,33 +350,24 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
           }
           // System.out.println("Positions: " + position);
           // System.out.println("Ids: " + argumentId);
-          Assignment assignment = new Assignment(operatorId, position, argumentId);
           if (groundCondition.isNegated()) {
-            int predicateId = predicates.get(groundCondition.withoutNegation());
-            if (isPrecondition) {
-              preconditionsNeg.get(predicateId)
-                  .add(assignment);
-              if (implicationChainPos.get(predicateId).size() != 0) {
-                implicationChainLastNeg.get(predicateId).put(assignment, implicationChainPos.get(predicateId).get(implicationChainPos.get(predicateId).size() - 1));
+            if (!rigidConditions.contains(groundCondition.withoutNegation())) {
+              if (isPrecondition) {
+                preconditionsNeg.get(predicates.get(groundCondition.withoutNegation()))
+                    .add(new Assignment(operatorId, position, argumentId));
+              } else {
+                effectsNeg.get(predicates.get(groundCondition.withoutNegation()))
+                    .add(new Assignment(operatorId, position, argumentId));
               }
-            } else {
-              effectsNeg.get(predicateId)
-                  .add(assignment);
-              implicationChainNeg.get(predicateId).add(assignment);
-              implicationChainNegSatId.get(predicateId).put(assignment, satCounter++);
             }
           } else {
-            int predicateId = predicates.get(groundCondition);
-            if (isPrecondition) {
-              preconditionsPos.get(predicateId)
-                  .add(assignment);
-              if (implicationChainNeg.get(predicateId).size() != 0) {
-                implicationChainLastPos.get(predicateId).put(assignment, implicationChainNeg.get(predicateId).get(implicationChainNeg.get(predicateId).size() - 1));
+            if (!rigidConditions.contains(groundCondition)) {
+              if (isPrecondition) {
+                preconditionsPos.get(predicates.get(groundCondition))
+                    .add(new Assignment(operatorId, position, argumentId));
+              } else {
+                effectsPos.get(predicates.get(groundCondition)).add(new Assignment(operatorId, position, argumentId));
               }
-            } else {
-              effectsPos.get(predicateId).add(assignment);
-              implicationChainNeg.get(predicateId).add(assignment);
-              implicationChainNegSatId.get(predicateId).put(assignment, satCounter++);
             }
           }
         }
@@ -399,7 +393,8 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     }
     ArgumentCombinationUtils.iterator(eligible).forEachRemaining(args -> {
       Condition groundCondition = c.getConditionBoundToArguments(variableParameters, args);
-      if (!predicates.containsKey(groundCondition.withoutNegation())) {
+      if (!predicates.containsKey(groundCondition.withoutNegation())
+          && !rigidConditions.contains(groundCondition.withoutNegation())) {
         // System.out.println("Forbidden for operator " + operators.get(o) + ": " +
         // args);
         List<Integer> position = new ArrayList<>();
@@ -422,10 +417,8 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     Logger.log(Logger.INFO, "Parameterassignment: " + numClauses);
     numClauses = addConditionClauses();
     Logger.log(Logger.INFO, "Parameters imply conditions: " + numClauses);
-    // numClauses = addInterferenceClauses();
-    // Logger.log(Logger.INFO, "Interference: " + numClauses);
-    numClauses = addImplicationChainClauses();
-    Logger.log(Logger.INFO, "Implication chain: " + numClauses);
+    numClauses = addInterferenceClauses();
+    Logger.log(Logger.INFO, "Interference: " + numClauses);
     numClauses = addFrameAxioms();
     Logger.log(Logger.INFO, "Frame axioms: " + numClauses);
     numClauses = addForbiddenClauses();
@@ -449,28 +442,17 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
   protected int addParameterClauses() {
     int numClauses = 0;
     for (int oId : operators.values()) {
-      int numParameters = eligibleArguments.get(oId).size();
-      for (int pos = 0; pos < numParameters; pos++) {
+      for (int pos = 0; pos < eligibleArguments.get(oId).size(); pos++) {
         Map<Argument, Integer> arguments = eligibleArguments.get(oId).get(pos);
         if (arguments == null) {
           continue;
-        }
-        for (int nextPos = 1; nextPos < numParameters; nextPos++) {
-          if (eligibleArguments.get(oId).get((pos + nextPos) % numParameters) != null) {
-            int[] clause = new int[2];
-            clause[0] = -getOperatorSatId(oId, pos);
-            clause[1] = getOperatorSatId(oId, (pos + nextPos) % numParameters);
-            universalClauses.add(clause);
-            numClauses++;
-            break;
-          }
         }
         int numArgs = arguments.size();
         {
           // Operator -> Parameter
           int[] clause = new int[numArgs + 1];
           int counter = 0;
-          clause[counter++] = -getOperatorSatId(oId, pos);
+          clause[counter++] = -getOperatorSatId(oId);
           for (int aId : arguments.values()) {
             clause[counter++] = getParameterSatId(oId, pos, aId);
           }
@@ -482,7 +464,7 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
           for (int aId : arguments.values()) {
             int[] clause = new int[2];
             clause[0] = -getParameterSatId(oId, pos, aId);
-            clause[1] = getOperatorSatId(oId, pos);
+            clause[1] = getOperatorSatId(oId);
             universalClauses.add(clause);
             numClauses++;
           }
@@ -540,14 +522,9 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
               clause[counter++] = (isPositive ? 1 : -1) * getPredicateSatId(pId, !isPrecondition);
             } else {
               clause = new int[2];
-              clause[0] = -getFirstOperatorId(oId);
+              clause[0] = -getOperatorSatId(oId);
               clause[1] = (isPositive ? 1 : -1) * getPredicateSatId(pId, !isPrecondition);
             }
-            // System.out.print("Operator " + oId + " supports " + pId + ": [ ");
-            // for (int i : clause) {
-            // System.out.print(i + " ");
-            // }
-            // System.out.println("]");
             if (isPrecondition) {
               universalClauses.add(clause);
             } else {
@@ -561,121 +538,52 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     return numClauses;
   }
 
-  protected int addImplicationChainClauses() {
+  protected int addInterferenceClauses() {
     int numClauses = 0;
     for (int pId : predicates.values()) {
       for (boolean isPositive : Arrays.asList(true, false)) {
-        List<Assignment> implicationChain;
-        Map<Assignment, Assignment> implicationChainLast;
-        Map<Assignment, Integer> implicationChainSatId;
-        Map<Assignment, Integer> implicationChainOtherSatId;
+        Set<Assignment> effectSupport;
+        Set<Assignment> precondSupport;
         if (isPositive) {
-          implicationChain = implicationChainPos.get(pId);
-          implicationChainLast = implicationChainLastPos.get(pId);
-          implicationChainSatId = implicationChainPosSatId.get(pId);
-          implicationChainOtherSatId = implicationChainNegSatId.get(pId);
+          effectSupport = effectsPos.get(pId);
+          precondSupport = preconditionsNeg.get(pId);
         } else {
-          implicationChain = implicationChainNeg.get(pId);
-          implicationChainLast = implicationChainLastNeg.get(pId);
-          implicationChainSatId = implicationChainNegSatId.get(pId);
-          implicationChainOtherSatId = implicationChainPosSatId.get(pId);
+          effectSupport = effectsNeg.get(pId);
+          precondSupport = preconditionsPos.get(pId);
         }
-        for (int i = 0; i < implicationChain.size(); i++) {
-          Assignment positiveEffect = implicationChain.get(i);
-          if (i < implicationChain.size() - 1) {
-            int[] clause = new int[2];
-            clause[0] = implicationChainSatId.get(positiveEffect);
-            clause[1] = implicationChainSatId.get(implicationChain.get(i+1));
+        for (Assignment effectAssignment : effectSupport) {
+          int effectOperatorId = effectAssignment.getOperatorId();
+          for (Assignment precondAssignment : precondSupport) {
+            int precondOperatorId = precondAssignment.getOperatorId();
+            if (effectOperatorId == precondOperatorId) {
+              continue;
+            }
+            int[] clause = new int[Math.max(effectAssignment.size() + precondAssignment.size(), 2)];
+            int counter = 0;
+            if (effectAssignment.size() >= 1) {
+              for (int i = 0; i < effectAssignment.size(); i++) {
+                clause[counter++] = -getParameterSatId(effectOperatorId, effectAssignment.getPosition(i),
+                    effectAssignment.getArgumentId(i));
+              }
+            } else {
+              clause[counter++] = -getOperatorSatId(effectOperatorId);
+            }
+            if (precondAssignment.size() >= 1) {
+              for (int i = 0; i < precondAssignment.size(); i++) {
+                clause[counter++] = -getParameterSatId(precondOperatorId, precondAssignment.getPosition(i),
+                    precondAssignment.getArgumentId(i));
+              }
+            } else {
+              clause[counter++] = -getOperatorSatId(precondOperatorId);
+            }
             universalClauses.add(clause);
             numClauses++;
           }
-          int[] clause = new int[2];
-          if (positiveEffect.size() > 1) {
-            Logger.log(Logger.ERROR, "Support for predicate " + pId + " is not unary: " + positiveEffect.getOperatorId());
-            System.exit(1);
-          }
-          if (positiveEffect.size() == 1) {
-            clause[0] = -getParameterSatId(positiveEffect.getOperatorId(), positiveEffect.getPosition(0), positiveEffect.getArgumentId(0));
-          } else {
-            clause[0] = -getFirstOperatorId(positiveEffect.getOperatorId());
-          }
-          clause[1] = implicationChainSatId.get(positiveEffect);
-          universalClauses.add(clause);
-          numClauses++;
-        }
-        for (Assignment positivePrecondition : implicationChainLast.keySet()) {
-          int[] clause = new int[Math.max(positivePrecondition.size(), 1) + 1];
-          int counter = 0;
-          if (positivePrecondition.size() >= 1) {
-            for (int i = 0; i < positivePrecondition.size(); i++) {
-              clause[counter++] = -getParameterSatId(positivePrecondition.getOperatorId(), positivePrecondition.getPosition(i), positivePrecondition.getArgumentId(i));
-            }
-          } else {
-            clause[counter++] = -getFirstOperatorId(positivePrecondition.getOperatorId());
-          }
-          Assignment negativeEffect = implicationChainLast.get(positivePrecondition);
-          clause[counter++] = -implicationChainOtherSatId.get(negativeEffect);
-          universalClauses.add(clause);
-          numClauses++;
         }
       }
     }
     return numClauses;
   }
-
-  // protected int addInterferenceClauses() {
-  //   int numClauses = 0;
-  //   for (int pId : predicates.values()) {
-  //     for (boolean isPositive : Arrays.asList(true, false)) {
-  //       Set<Assignment> effectSupport;
-  //       Set<Assignment> precondSupport;
-  //       if (isPositive) {
-  //         effectSupport = effectsPos.get(pId);
-  //         precondSupport = preconditionsNeg.get(pId);
-  //       } else {
-  //         effectSupport = effectsNeg.get(pId);
-  //         precondSupport = preconditionsPos.get(pId);
-  //       }
-  //       for (Assignment effectAssignment : effectSupport) {
-  //         int effectOperatorId = effectAssignment.getOperatorId();
-  //         for (Assignment precondAssignment : precondSupport) {
-  //           int precondOperatorId = precondAssignment.getOperatorId();
-  //           if (effectOperatorId == precondOperatorId) {
-  //             continue;
-  //           }
-  //           int[] clause = new int[Math.max(effectAssignment.size() + precondAssignment.size(), 2)];
-  //           int counter = 0;
-  //           if (effectAssignment.size() >= 1) {
-  //             for (int i = 0; i < effectAssignment.size(); i++) {
-  //               clause[counter++] = -getParameterSatId(effectOperatorId, effectAssignment.getPosition(i),
-  //                   effectAssignment.getArgumentId(i));
-  //             }
-  //           } else {
-  //             clause[counter++] = -getFirstOperatorId(effectOperatorId);
-  //           }
-  //           if (precondAssignment.size() >= 1) {
-  //             for (int i = 0; i < precondAssignment.size(); i++) {
-  //               clause[counter++] = -getParameterSatId(precondOperatorId, precondAssignment.getPosition(i),
-  //                   precondAssignment.getArgumentId(i));
-  //             }
-  //           } else {
-  //             clause[counter++] = -getFirstOperatorId(precondOperatorId);
-  //           }
-  //           // System.out.print(
-  //           // "Operator " + effectOperatorId + " interferes with " + precondOperatorId + "
-  //           // on " + pId + ": [ ");
-  //           // for (int i : clause) {
-  //           // System.out.print(i + " ");
-  //           // }
-  //           // System.out.println("]");
-  //           universalClauses.add(clause);
-  //           numClauses++;
-  //         }
-  //       }
-  //     }
-  //   }
-  //   return numClauses;
-  // }
 
   protected int addFrameAxioms() {
     int numClauses = 0;
@@ -700,7 +608,7 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
             clause[counter++] = getParameterSatId(assignment.getOperatorId(), assignment.getPosition(0),
                 assignment.getArgumentId(0));
           } else {
-            clause[counter++] = getFirstOperatorId(assignment.getOperatorId());
+            clause[counter++] = getOperatorSatId(assignment.getOperatorId());
           }
         }
         transitionClauses.add(clause);
@@ -730,13 +638,6 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     problem.getGoals().forEach(c -> goalSet.add(c));
     Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(goalSet);
     ConditionSet simpleSet = split.getLeft();
-    // if (split.getRight() != null) {
-    //   if (split.getRight().getConditions().size() > 0) {
-        // Logger.log(Logger.WARN, "Goal contains complex set: " + split);
-        // Logger.log(Logger.WARN, "These conditions will be ignored");
-        // System.exit(1);
-      // }
-    // }
     goalClause = new int[simpleSet.getConditions().size()];
     int counter = 0;
     for (AbstractCondition c : simpleSet.getConditions()) {
@@ -750,38 +651,39 @@ public class ExistsLiftedSatPlanner extends LiftedPlanner {
     // System.out.println("Goal: " + goalClause);
   }
 
-  protected int getFirstOperatorId(int oId) {
-    for (int i = 0; i < operatorSatId.get(oId).size(); i++) {
-      if (operatorSatId.get(oId).get(i) != null) {
-        return operatorSatId.get(oId).get(i);
+  protected List<Argument> getConstantsOfType(Type type) {
+    List<Argument> result = new ArrayList<>();
+    for (int i = 0; i < constants.size(); i++) {
+      if (problem.isTypeSupertypeOfType(constants.get(i).getType(), type)) {
+        result.add(constants.get(i));
       }
     }
-    return dummy.get(oId);
+    return result;
   }
 
   protected int getPredicateSatId(int pId, boolean nextStep) {
     return predicateSatId.get(pId) + (nextStep ? stepVars : 0);
   }
 
-  protected int getOperatorSatId(int oId, int pos) {
-    return operatorSatId.get(oId).get(pos);
+  protected int getOperatorSatId(int oId) {
+    return operatorSatId.get(oId);
   }
 
   protected int getParameterSatId(int oId, int pos, int cId) {
     return parameterSatId.get(oId).get(pos).get(cId);
   }
 
+  protected List<List<List<Assignment>>> chainImpliesPos;
+  protected List<List<List<Assignment>>> chainImpliesNeg;
+  protected List<Map<Assignment, Integer>> implyChainPos;
+  protected List<Map<Assignment, Integer>> implyChainNeg;
+  protected List<List<Integer>> chainSatId;
+  protected List<Argument> constants;
   protected Map<Operator, List<Integer>> operatorGrounding;
   protected List<Integer> predicateSatId;
-  protected List<List<Integer>> operatorSatId;
+  protected List<Integer> operatorSatId;
   protected List<List<List<Integer>>> parameterSatId;
-  protected List<Map<Assignment, Integer>> implicationChainPosSatId;
-  protected List<Map<Assignment, Integer>> implicationChainNegSatId;
-  protected List<Integer> dummy;
-  protected List<List<Assignment>> implicationChainPos;
-  protected List<List<Assignment>> implicationChainNeg;
-  protected List<Map<Assignment, Assignment>> implicationChainLastPos;
-  protected List<Map<Assignment, Assignment>> implicationChainLastNeg;
+  protected Set<Condition> rigidConditions;
 
   protected int satCounter;
 }
