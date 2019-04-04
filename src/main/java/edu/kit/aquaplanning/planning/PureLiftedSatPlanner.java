@@ -1,7 +1,7 @@
 package edu.kit.aquaplanning.planning;
 
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 import java.util.function.BiPredicate;
-import java.util.stream.Collectors;
 
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
@@ -23,7 +22,6 @@ import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition;
 import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
 import edu.kit.aquaplanning.model.lifted.condition.Condition;
 import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
-import edu.kit.aquaplanning.sat.SatSolver;
 import edu.kit.aquaplanning.util.Logger;
 import edu.kit.aquaplanning.util.Pair;
 
@@ -53,56 +51,36 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
     // int step = 0;
 
     // for (int[] clause : initialClauses) {
-    //   solver.addClause(clause);
+    // solver.addClause(clause);
     // }
     // Logger.log(Logger.INFO, "TIME2 Starting solver");
     // while (true) {
-    //   if (solver.isSatisfiable(goalClause)) {
-    //     Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
-    //     break;
-    //   }
-    //   Logger.log(Logger.INFO, "No solution found in step " + step);
-    //   for (int[] clause : universalClauses) {
-    //     solver.addClause(clause);
-    //   }
-    //   for (int[] clause : transitionClauses) {
-    //     solver.addClause(clause);
-    //   }
-    //   nextStep();
-    //   step++;
+    // if (solver.isSatisfiable(goalClause)) {
+    // Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
+    // break;
+    // }
+    // Logger.log(Logger.INFO, "No solution found in step " + step);
+    // for (int[] clause : universalClauses) {
+    // solver.addClause(clause);
+    // }
+    // for (int[] clause : transitionClauses) {
+    // solver.addClause(clause);
+    // }
+    // nextStep();
+    // step++;
     // }
 
-    // for (int[] clause : initialClauses) {
-    //   solver.addClause(clause);
-    // }
-    // Logger.log(Logger.INFO, "TIME2 Starting solver");
-    // int step = 0;
-    // while (true) {
-    //   for (int[] clause : universalClauses) {
-    //     solver.addClause(clause);
-    //   }
-    //   if (solver.isSatisfiable(goalClause)) {
-    //     Logger.log(Logger.INFO, "TIME3 Solution found in step " + step);
-    //     break;
-    //   }
-    //   Logger.log(Logger.INFO, "No solution found in step " + step);
-    //   for (int[] clause : transitionClauses) {
-    //     solver.addClause(clause);
-    //   }
-    //   nextStep();
-    //   step++;
-    // }
     grounder.ground(problem);
     // return extractPlan(solver.getModel(), step);
     // System.out.println("Satsolver: " + step);
     // System.out.println("Satsolver: " + solver.getModel().length);
     // for (int i: solver.getModel()) {
-    //   System.out.print(i + " ");
+    // System.out.print(i + " ");
     // }
     // System.out.println("Incplan: " + solution.steps);
     // System.out.println("Incplan: " + solution.model.length);
     // for (int i: solution.model) {
-    //   System.out.print(i + " ");
+    // System.out.print(i + " ");
     // }
     return extractPlan(solution.model, solution.steps);
     // return extractPlan(solver.getModel(), step);
@@ -201,7 +179,7 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
           } else {
             satId.add(new ArrayList<>());
             operatorArguments.add(new HashMap<>());
-            for (Argument a: getConstantsOfType(newOperator.getArguments().get(i).getType())) {
+            for (Argument a : getConstantsOfType(newOperator.getArguments().get(i).getType())) {
               satId.get(i).add(satCounter++);
               operatorArguments.get(i).put(a, operatorArguments.get(i).size());
             }
@@ -210,10 +188,11 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
         parameterSatId.add(satId);
         eligibleArguments.add(operatorArguments);
         for (boolean isPrecondition : Arrays.asList(true, false)) {
-          Pair<ConditionSet, ConditionSet> split = isPrecondition ? grounder.splitCondition(newOperator.getPrecondition())
-            : grounder.splitCondition(newOperator.getEffect());
+          Pair<ConditionSet, ConditionSet> split = isPrecondition
+              ? grounder.splitCondition(newOperator.getPrecondition())
+              : grounder.splitCondition(newOperator.getEffect());
           ConditionSet simpleSet = split.getLeft();
-          for (AbstractCondition c: split.getRight().getConditions()) {
+          for (AbstractCondition c : split.getRight().getConditions()) {
             if (c.getConditionType() != ConditionType.numericEffect) {
               Logger.log(Logger.ERROR, "Condition contains complex set: " + split);
               System.exit(1);
@@ -244,15 +223,15 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
               if (groundCondition.isNegated()) {
                 if (isPrecondition) {
                   preconditionsNeg.get(predicates.get(groundCondition.withoutNegation()))
-                    .add(new Assignment(operatorId, position, argumentId));
+                      .add(new Assignment(operatorId, position, argumentId));
                 } else {
                   effectsNeg.get(predicates.get(groundCondition.withoutNegation()))
-                    .add(new Assignment(operatorId, position, argumentId));
+                      .add(new Assignment(operatorId, position, argumentId));
                 }
               } else {
                 if (isPrecondition) {
                   preconditionsPos.get(predicates.get(groundCondition))
-                    .add(new Assignment(operatorId, position, argumentId));
+                      .add(new Assignment(operatorId, position, argumentId));
                 } else {
                   effectsPos.get(predicates.get(groundCondition)).add(new Assignment(operatorId, position, argumentId));
                 }
@@ -312,7 +291,7 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
           }
           // System.out.print("Operator " + oId + " Param " + pos + ": [ ");
           // for (int i : clause) {
-          //   System.out.print(i + " ");
+          // System.out.print(i + " ");
           // }
           // System.out.println("]");
           universalClauses.add(clause);
@@ -370,7 +349,7 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
             clause[counter++] = (isPositive ? 1 : -1) * getPredicateSatId(pId, !isPrecondition);
             // System.out.print("Operator " + oId + " supports " + pId + ": [ ");
             // for (int i : clause) {
-            //   System.out.print(i + " ");
+            // System.out.print(i + " ");
             // }
             // System.out.println("]");
             if (isPrecondition) {
@@ -419,9 +398,10 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
                   precondAssignment.getArgumentId(i));
             }
             // System.out.print(
-            //     "Operator " + effectOperatorId + " interferes with " + precondOperatorId + " on " + pId + ": [ ");
+            // "Operator " + effectOperatorId + " interferes with " + precondOperatorId + "
+            // on " + pId + ": [ ");
             // for (int i : clause) {
-            //   System.out.print(i + " ");
+            // System.out.print(i + " ");
             // }
             // System.out.println("]");
             universalClauses.add(clause);
@@ -455,9 +435,10 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
                 assignment.getArgumentId(i));
           }
           // System.out
-          //     .print("Predicate " + pId + " has support from " + assignment.getOperatorId() + ": [ ");
+          // .print("Predicate " + pId + " has support from " + assignment.getOperatorId()
+          // + ": [ ");
           // for (int i : clause) {
-          //   System.out.print(i + " ");
+          // System.out.print(i + " ");
           // }
           // System.out.println("]");
           dnf.add(clause);
@@ -478,10 +459,10 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
     Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(goalSet);
     ConditionSet simpleSet = split.getLeft();
     // if (split.getRight() != null) {
-    //   if (split.getRight().getConditions().size() > 0) {
-    //     Logger.log(Logger.ERROR, "Goal contains complex set: " + split);
-    //     System.exit(1);
-    //   }
+    // if (split.getRight().getConditions().size() > 0) {
+    // Logger.log(Logger.ERROR, "Goal contains complex set: " + split);
+    // System.exit(1);
+    // }
     // }
     goalClause = new int[simpleSet.getConditions().size()];
     int counter = 0;

@@ -116,20 +116,21 @@ public class Isolate2LiftedSatPlanner extends LiftedPlanner {
     return plan;
   }
 
-  protected void computeGrounding(Operator o) {
+  protected void computeGrounding(Operator o, List<Set<Argument>> args) {
     List<Integer> groundPos = new ArrayList<>();
     int best = -1;
     for (int i = 0; i <= o.getArguments().size(); i++) {
-      int tmp = computeGrounding(o, i, groundPos, 0, best);
+      int tmp = computeGrounding(o, i, groundPos, 0, best, args);
       if (tmp > -1 && (tmp < best || best == -1)) {
         best = tmp;
       }
     }
   }
 
-  protected int computeGrounding(Operator o, int numArgs, List<Integer> current, int pos, int oldBest) {
+  protected int computeGrounding(Operator o, int numArgs, List<Integer> current, int pos, int oldBest,
+      List<Set<Argument>> args) {
     if (numArgs == 0) {
-      int res = testGrounding(o, current);
+      int res = testGrounding(o, current, args);
       if (res > -1 && (res < oldBest || oldBest < 0)) {
         operatorGrounding.put(o, current);
         return res;
@@ -140,7 +141,7 @@ public class Isolate2LiftedSatPlanner extends LiftedPlanner {
       if (!o.getArguments().get(pos).isConstant()) {
         List<Integer> tmp = new ArrayList<>(current);
         tmp.add(pos);
-        int res = computeGrounding(o, numArgs - 1, tmp, pos + 1, oldBest);
+        int res = computeGrounding(o, numArgs - 1, tmp, pos + 1, oldBest, args);
         if (res > -1 && (res < oldBest || oldBest < 0)) {
           oldBest = res;
         }
@@ -150,19 +151,19 @@ public class Isolate2LiftedSatPlanner extends LiftedPlanner {
     return oldBest;
   }
 
-  protected int testGrounding(Operator o, List<Integer> groundPos) {
-    List<Argument> args = new ArrayList<>();
+  protected int testGrounding(Operator o, List<Integer> groundPos, List<Set<Argument>> args) {
+    List<Argument> tmpArgs = new ArrayList<>();
     for (int i = 0; i < o.getArguments().size(); i++) {
-      args.add(null);
+      tmpArgs.add(null);
     }
     int numOperators = 1;
     for (int i = 0; i < groundPos.size(); i++) {
-      args.set(groundPos.get(i), new Argument("test", new Type("test")));
+      tmpArgs.set(groundPos.get(i), new Argument("test", new Type("test")));
       if (groundPos.get(i) != null) {
-        numOperators *= getConstantsOfType(o.getArguments().get(groundPos.get(i)).getType()).size();
+        numOperators *= args.get(groundPos.get(i)).size();
       }
     }
-    Operator groundedOperator = o.getOperatorWithGroundArguments(args);
+    Operator groundedOperator = o.getOperatorWithGroundArguments(tmpArgs);
     AbstractCondition ac = groundedOperator.getEffect();
     ConditionSet simpleSet = grounder.splitCondition(ac).getLeft();
     for (AbstractCondition c : simpleSet.getConditions()) {
@@ -253,8 +254,23 @@ public class Isolate2LiftedSatPlanner extends LiftedPlanner {
     eligibleArguments = new ArrayList<>();
     operatorGrounding = new HashMap<>();
     Map<String, Operator> operatorLookup = new HashMap<>();
-    problem.getOperators().forEach(o -> operatorLookup.put(o.getName(), o));
-    problem.getOperators().forEach(o -> computeGrounding(o));
+    List<List<Set<Argument>>> liftedOperatorArguments = new ArrayList<>();
+    for (Operator o : problem.getOperators()) {
+      operatorLookup.put(o.getName(), o);
+      liftedOperatorArguments.add(new ArrayList<>());
+      for (int i = 0; i < o.getArguments().size(); i++) {
+        liftedOperatorArguments.get(liftedOperatorArguments.size() - 1).add(new HashSet<>());
+      }
+    }
+    for (Operator o : graph.getLiftedActions()) {
+      Operator liftedOperator = operatorLookup.get(o.getName());
+      for (int i = 0; i < o.getArguments().size(); i++) {
+        liftedOperatorArguments.get(problem.getOperators().indexOf(liftedOperator)).get(i).add(o.getArguments().get(i));
+      }
+    }
+    for (int i = 0; i < problem.getOperators().size(); i++) {
+      computeGrounding(problem.getOperators().get(i), liftedOperatorArguments.get(i));
+    }
     for (Operator groundedOperator : graph.getLiftedActions()) {
       Operator liftedOperator = operatorLookup.get(groundedOperator.getName());
       int numParameters = groundedOperator.getArguments().size();
@@ -639,16 +655,6 @@ public class Isolate2LiftedSatPlanner extends LiftedPlanner {
       }
     }
     // System.out.println("Goal: " + goalClause);
-  }
-
-  protected List<Argument> getConstantsOfType(Type type) {
-    List<Argument> result = new ArrayList<>();
-    for (int i = 0; i < constants.size(); i++) {
-      if (problem.isTypeSupertypeOfType(constants.get(i).getType(), type)) {
-        result.add(constants.get(i));
-      }
-    }
-    return result;
   }
 
   protected int getPredicateSatId(int pId, boolean nextStep) {
