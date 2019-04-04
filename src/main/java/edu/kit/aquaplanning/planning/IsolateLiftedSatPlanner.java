@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.ArgumentCombinationUtils;
 import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
@@ -86,37 +87,27 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
     for (int base = 0; base < steps * stepVars; base += stepVars) {
       for (Operator o : operators.keySet()) {
         int i = operators.get(o);
-        List<Argument> args = new ArrayList<>();
-        // System.out.println(o);
-        boolean applyAction = false;
-        if (dummy.get(i) != null && model[dummy.get(i) + base] > 0) {
-          applyAction = true;
-        } else {
+        if (model[getOperatorSatId(i) + base] > 0) {
+          List<Argument> args = new ArrayList<>();
           for (int j = 0; j < o.getArguments().size(); j++) {
             if (o.getArguments().get(j).isConstant()) {
               args.add(null);
               continue;
             }
-            if (model[getOperatorSatId(i, j) + base] > 0) {
-              applyAction = true;
-              // System.out.println("Found " + i + " " + j);
-              boolean found = eligibleArguments.get(i).get(j).size() == 0;
-              for (Argument arg : eligibleArguments.get(i).get(j).keySet()) {
-                int k = eligibleArguments.get(i).get(j).get(arg);
-                if (model[getParameterSatId(i, j, k) + base] >= 0) {
-                  args.add(arg);
-                  found = true;
-                  break;
-                }
-              }
-              if (!found) {
-                Logger.log(Logger.ERROR, "Parameter not set in solution");
-                System.exit(1);
+            boolean found = eligibleArguments.get(i).get(j).size() == 0;
+            for (Argument arg : eligibleArguments.get(i).get(j).keySet()) {
+              int k = eligibleArguments.get(i).get(j).get(arg);
+              if (model[getParameterSatId(i, j, k) + base] >= 0) {
+                args.add(arg);
+                found = true;
+                break;
               }
             }
+            if (!found) {
+              Logger.log(Logger.ERROR, "Parameter not set in solution");
+              System.exit(1);
+            }
           }
-        }
-        if (applyAction) {
           Operator go = o.getOperatorWithGroundArguments(args);
           plan.appendAtBack(grounder.getAction(go));
         }
@@ -125,45 +116,54 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
     return plan;
   }
 
-  protected void computeGrounding(Operator o) {
+  protected void computeGrounding(Operator o, List<Set<Argument>> args) {
     List<Integer> groundPos = new ArrayList<>();
+    int best = -1;
     for (int i = 0; i <= o.getArguments().size(); i++) {
-      if (computeGrounding(o, i, groundPos, 0)) {
-        break;
+      int tmp = computeGrounding(o, i, groundPos, 0, best, args);
+      if (tmp > -1 && (tmp < best || best == -1)) {
+        best = tmp;
       }
     }
   }
 
-  protected boolean computeGrounding(Operator o, int numArgs, List<Integer> current, int pos) {
+  protected int computeGrounding(Operator o, int numArgs, List<Integer> current, int pos, int oldBest,
+      List<Set<Argument>> args) {
     if (numArgs == 0) {
-      if (testGrounding(o, current)) {
+      int res = testGrounding(o, current, args);
+      if (res > -1 && (res < oldBest || oldBest < 0)) {
         operatorGrounding.put(o, current);
-        return true;
+        return res;
       }
-      return false;
+      return -1;
     }
     while (pos + numArgs <= o.getArguments().size()) {
       if (!o.getArguments().get(pos).isConstant()) {
         List<Integer> tmp = new ArrayList<>(current);
         tmp.add(pos);
-        if (computeGrounding(o, numArgs - 1, tmp, pos + 1)) {
-          return true;
+        int res = computeGrounding(o, numArgs - 1, tmp, pos + 1, oldBest, args);
+        if (res > -1 && (res < oldBest || oldBest < 0)) {
+          oldBest = res;
         }
       }
       pos++;
     }
-    return false;
+    return oldBest;
   }
 
-  protected boolean testGrounding(Operator o, List<Integer> groundPos) {
-    List<Argument> args = new ArrayList<>();
+  protected int testGrounding(Operator o, List<Integer> groundPos, List<Set<Argument>> args) {
+    List<Argument> tmpArgs = new ArrayList<>();
     for (int i = 0; i < o.getArguments().size(); i++) {
-      args.add(null);
+      tmpArgs.add(null);
     }
+    int numOperators = 1;
     for (int i = 0; i < groundPos.size(); i++) {
-      args.set(groundPos.get(i), new Argument("test", new Type("test")));
+      tmpArgs.set(groundPos.get(i), new Argument("test", new Type("test")));
+      if (groundPos.get(i) != null) {
+        numOperators *= args.get(groundPos.get(i)).size();
+      }
     }
-    Operator groundedOperator = o.getOperatorWithGroundArguments(args);
+    Operator groundedOperator = o.getOperatorWithGroundArguments(tmpArgs);
     AbstractCondition ac = groundedOperator.getEffect();
     ConditionSet simpleSet = grounder.splitCondition(ac).getLeft();
     for (AbstractCondition c : simpleSet.getConditions()) {
@@ -179,7 +179,7 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
       for (Argument a : condition.getArguments()) {
         if (!a.isConstant()) {
           if (hasVariable) {
-            return false;
+            return -1;
           } else {
             hasVariable = true;
           }
@@ -188,11 +188,12 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
     }
     // System.out.println("Lifted: " + o);
     // System.out.println("Grounded: " + groundedOperator);
-    return true;
+    return numOperators;
   }
 
   protected void initIDs() {
     satCounter = 1;
+    constants = problem.getConstants();
     setPredicateIDs();
     setOperatorIDs();
     forbidden = new HashSet<>();
@@ -252,10 +253,24 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
     parameterSatId = new ArrayList<>();
     eligibleArguments = new ArrayList<>();
     operatorGrounding = new HashMap<>();
-    dummy = new ArrayList<>();
     Map<String, Operator> operatorLookup = new HashMap<>();
-    problem.getOperators().forEach(o -> operatorLookup.put(o.getName(), o));
-    problem.getOperators().forEach(o -> computeGrounding(o));
+    List<List<Set<Argument>>> liftedOperatorArguments = new ArrayList<>();
+    for (Operator o : problem.getOperators()) {
+      operatorLookup.put(o.getName(), o);
+      liftedOperatorArguments.add(new ArrayList<>());
+      for (int i = 0; i < o.getArguments().size(); i++) {
+        liftedOperatorArguments.get(liftedOperatorArguments.size() - 1).add(new HashSet<>());
+      }
+    }
+    for (Operator o : graph.getLiftedActions()) {
+      Operator liftedOperator = operatorLookup.get(o.getName());
+      for (int i = 0; i < o.getArguments().size(); i++) {
+        liftedOperatorArguments.get(problem.getOperators().indexOf(liftedOperator)).get(i).add(o.getArguments().get(i));
+      }
+    }
+    for (int i = 0; i < problem.getOperators().size(); i++) {
+      computeGrounding(problem.getOperators().get(i), liftedOperatorArguments.get(i));
+    }
     for (Operator groundedOperator : graph.getLiftedActions()) {
       Operator liftedOperator = operatorLookup.get(groundedOperator.getName());
       int numParameters = groundedOperator.getArguments().size();
@@ -274,26 +289,17 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
         operatorId = operators.size();
         // System.out.println("New operator " + operatorId + ": " + newOperator);
         operators.put(newOperator, operatorId);
-        operatorSatId.add(new ArrayList<>());
+        operatorSatId.add(satCounter++);
         List<Map<Argument, Integer>> operatorArguments = new ArrayList<>();
         List<List<Integer>> satId = new ArrayList<>();
-        boolean hasVariable = false;
         for (int i = 0; i < numParameters; i++) {
           if (newOperator.getArguments().get(i).isConstant()) {
             satId.add(null);
             operatorArguments.add(null);
-            operatorSatId.get(operatorId).add(null);
           } else {
-            hasVariable = true;
             satId.add(new ArrayList<>());
             operatorArguments.add(new HashMap<>());
-            operatorSatId.get(operatorId).add(satCounter++);
           }
-        }
-        if (hasVariable) {
-          dummy.add(null);
-        } else {
-          dummy.add(satCounter++);
         }
         parameterSatId.add(satId);
         eligibleArguments.add(operatorArguments);
@@ -442,28 +448,17 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
   protected int addParameterClauses() {
     int numClauses = 0;
     for (int oId : operators.values()) {
-      int numParameters = eligibleArguments.get(oId).size();
-      for (int pos = 0; pos < numParameters; pos++) {
+      for (int pos = 0; pos < eligibleArguments.get(oId).size(); pos++) {
         Map<Argument, Integer> arguments = eligibleArguments.get(oId).get(pos);
         if (arguments == null) {
           continue;
-        }
-        for (int nextPos = 1; nextPos < numParameters; nextPos++) {
-          if (eligibleArguments.get(oId).get((pos + nextPos) % numParameters) != null) {
-            int[] clause = new int[2];
-            clause[0] = -getOperatorSatId(oId, pos);
-            clause[1] = getOperatorSatId(oId, (pos + nextPos) % numParameters);
-            universalClauses.add(clause);
-            numClauses++;
-            break;
-          }
         }
         int numArgs = arguments.size();
         {
           // Operator -> Parameter
           int[] clause = new int[numArgs + 1];
           int counter = 0;
-          clause[counter++] = -getOperatorSatId(oId, pos);
+          clause[counter++] = -getOperatorSatId(oId);
           for (int aId : arguments.values()) {
             clause[counter++] = getParameterSatId(oId, pos, aId);
           }
@@ -475,7 +470,7 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
           for (int aId : arguments.values()) {
             int[] clause = new int[2];
             clause[0] = -getParameterSatId(oId, pos, aId);
-            clause[1] = getOperatorSatId(oId, pos);
+            clause[1] = getOperatorSatId(oId);
             universalClauses.add(clause);
             numClauses++;
           }
@@ -533,14 +528,9 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
               clause[counter++] = (isPositive ? 1 : -1) * getPredicateSatId(pId, !isPrecondition);
             } else {
               clause = new int[2];
-              clause[0] = -getFirstOperatorId(oId);
+              clause[0] = -getOperatorSatId(oId);
               clause[1] = (isPositive ? 1 : -1) * getPredicateSatId(pId, !isPrecondition);
             }
-            // System.out.print("Operator " + oId + " supports " + pId + ": [ ");
-            // for (int i : clause) {
-            // System.out.print(i + " ");
-            // }
-            // System.out.println("]");
             if (isPrecondition) {
               universalClauses.add(clause);
             } else {
@@ -582,7 +572,7 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
                     effectAssignment.getArgumentId(i));
               }
             } else {
-              clause[counter++] = -getFirstOperatorId(effectOperatorId);
+              clause[counter++] = -getOperatorSatId(effectOperatorId);
             }
             if (precondAssignment.size() >= 1) {
               for (int i = 0; i < precondAssignment.size(); i++) {
@@ -590,15 +580,8 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
                     precondAssignment.getArgumentId(i));
               }
             } else {
-              clause[counter++] = -getFirstOperatorId(precondOperatorId);
+              clause[counter++] = -getOperatorSatId(precondOperatorId);
             }
-            // System.out.print(
-            // "Operator " + effectOperatorId + " interferes with " + precondOperatorId + "
-            // on " + pId + ": [ ");
-            // for (int i : clause) {
-            // System.out.print(i + " ");
-            // }
-            // System.out.println("]");
             universalClauses.add(clause);
             numClauses++;
           }
@@ -631,7 +614,7 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
             clause[counter++] = getParameterSatId(assignment.getOperatorId(), assignment.getPosition(0),
                 assignment.getArgumentId(0));
           } else {
-            clause[counter++] = getFirstOperatorId(assignment.getOperatorId());
+            clause[counter++] = getOperatorSatId(assignment.getOperatorId());
           }
         }
         transitionClauses.add(clause);
@@ -661,13 +644,6 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
     problem.getGoals().forEach(c -> goalSet.add(c));
     Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(goalSet);
     ConditionSet simpleSet = split.getLeft();
-    // if (split.getRight() != null) {
-    // if (split.getRight().getConditions().size() > 0) {
-    // Logger.log(Logger.WARN, "Goal contains complex set: " + split);
-    // Logger.log(Logger.WARN, "These conditions will be ignored");
-    // System.exit(1);
-    // }
-    // }
     goalClause = new int[simpleSet.getConditions().size()];
     int counter = 0;
     for (AbstractCondition c : simpleSet.getConditions()) {
@@ -681,32 +657,23 @@ public class IsolateLiftedSatPlanner extends LiftedPlanner {
     // System.out.println("Goal: " + goalClause);
   }
 
-  protected int getFirstOperatorId(int oId) {
-    for (int i = 0; i < operatorSatId.get(oId).size(); i++) {
-      if (operatorSatId.get(oId).get(i) != null) {
-        return operatorSatId.get(oId).get(i);
-      }
-    }
-    return dummy.get(oId);
-  }
-
   protected int getPredicateSatId(int pId, boolean nextStep) {
     return predicateSatId.get(pId) + (nextStep ? stepVars : 0);
   }
 
-  protected int getOperatorSatId(int oId, int pos) {
-    return operatorSatId.get(oId).get(pos);
+  protected int getOperatorSatId(int oId) {
+    return operatorSatId.get(oId);
   }
 
   protected int getParameterSatId(int oId, int pos, int cId) {
     return parameterSatId.get(oId).get(pos).get(cId);
   }
 
+  protected List<Argument> constants;
   protected Map<Operator, List<Integer>> operatorGrounding;
   protected List<Integer> predicateSatId;
-  protected List<List<Integer>> operatorSatId;
+  protected List<Integer> operatorSatId;
   protected List<List<List<Integer>>> parameterSatId;
-  protected List<Integer> dummy;
   protected Set<Condition> rigidConditions;
 
   protected int satCounter;
