@@ -4,17 +4,20 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.net.InetAddress;
 
-import edu.kit.aquaplanning.grounding.Grounder;
-import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
+import edu.kit.aquaplanning.grounding.PlanningGraphGrounder;
+import edu.kit.aquaplanning.grounding.htn.HtnGrounder;
 import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
 import edu.kit.aquaplanning.model.ground.Plan;
+import edu.kit.aquaplanning.model.ground.htn.HtnPlanningProblem;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
 import edu.kit.aquaplanning.optimization.Clock;
 import edu.kit.aquaplanning.optimization.SimplePlanOptimizer;
+import edu.kit.aquaplanning.parsing.PlanParser;
 import edu.kit.aquaplanning.parsing.ProblemParser;
 import edu.kit.aquaplanning.planning.GroundPlanner;
 import edu.kit.aquaplanning.planning.LiftedPlanner;
 import edu.kit.aquaplanning.planning.Planner;
+import edu.kit.aquaplanning.planning.htn.TreeRexPlanner;
 import edu.kit.aquaplanning.util.Logger;
 import edu.kit.aquaplanning.validation.Validator;
 import picocli.CommandLine;
@@ -24,7 +27,6 @@ import picocli.CommandLine;
  * some planner in order to find a solution.
  */
 public class Main {
-
   /**
    * Parses the command line arguments and returns a configuration object. Will
    * print messages and exit the application depending on requested help and/or
@@ -96,29 +98,59 @@ public class Main {
       Logger.log(Logger.INFO_V, p.toString()); // print parsed problem
       Logger.log(Logger.INFO, "Parsing complete.\n");
 
-      Plan plan = null;
+      // Step 2: Grounding (to get "flat" sets of actions and atoms)
+      Logger.log(Logger.INFO, "Grounding ...");
+      PlanningGraphGrounder grounder = new PlanningGraphGrounder(config);
+      GroundPlanningProblem planningProblem = grounder.ground(p);
+      if (planningProblem == null) {
+        Logger.log(Logger.ESSENTIAL, "The problem has been found to be unsatisfiable. Exiting.");
+        return;
+      }
+      // Print ground problem
+      if (Logger.INFO_VV <= config.verbosityLevel) {
+        Logger.log(Logger.INFO_VV, planningProblem.toString());
+      }
+      Logger.log(Logger.INFO,
+          "Grounding complete. " + planningProblem.getActions().size() + " actions resulted from the grounding.\n");
+      Logger.log(Logger.INFO, "Ground problem contains " + (planningProblem.hasConditionalEffects() ? "some" : "no")
+          + " conditional effects.");
+      Logger.log(Logger.INFO, "Ground problem contains " + (planningProblem.hasComplexConditions() ? "some" : "no")
+          + " complex conditions.");
 
-        // Step 2: Grounding (to get "flat" sets of actions and atoms)
-        Logger.log(Logger.INFO, "Grounding ...");
-        Grounder grounder = new RelaxedPlanningGraphGrounder(config);
-        GroundPlanningProblem planningProblem = grounder.ground(p);
-        // Print ground problem
-        if (Logger.INFO_VV <= config.verbosityLevel) {
-          Logger.log(Logger.INFO_VV, planningProblem.toString());
+      // Operation mode: Validation.
+      if (config.planFileToValidate != null) {
+        // Validate a provided plan file
+        Logger.log(Logger.INFO, "Parsing plan " + config.planFileToValidate + " ...");
+        Plan plan = PlanParser.parsePlan(config.planFileToValidate, planningProblem);
+        boolean isValid = false;
+        if (plan != null) {
+          Logger.log(Logger.INFO, "Validating plan ...");
+          isValid = Validator.planIsValid(planningProblem, plan);
         }
-        Logger.log(Logger.INFO,
-            "Grounding complete. " + planningProblem.getActions().size() + " actions resulted from the grounding.\n");
+        Logger.log(Logger.ESSENTIAL, "PLAN " + (isValid ? "VALID" : "INVALID") + ". Exiting.");
+        return;
+      }
 
-      if (Planner.isGround(config)) {
-        // Step 3: Planning
-        Logger.log(Logger.INFO, "Planning ...");
-        GroundPlanner planner = GroundPlanner.getPlanner(config);
-        plan = planner.findPlan(planningProblem);
+      // Operation mode: Planning.
+      Plan plan = null;
+      if (p instanceof HtnPlanningProblem) {
+        // HTN planning problem
+
+        Logger.log(Logger.INFO, "Initializing HTN grounding ...");
+        HtnGrounder htnGrounder = new HtnGrounder(planningProblem, (PlanningGraphGrounder) grounder);
+        TreeRexPlanner planner = new TreeRexPlanner(config, htnGrounder);
+        plan = planner.findPlan();
+
       } else {
         // Step 3: Planning
         Logger.log(Logger.INFO, "Planning ...");
-        LiftedPlanner planner = LiftedPlanner.getPlanner(config);
-        plan = planner.findPlan(p);
+        if (Planner.isGround(config)) {
+          GroundPlanner planner = GroundPlanner.getPlanner(config);
+          plan = planner.findPlan(planningProblem);
+        } else {
+          LiftedPlanner planner = LiftedPlanner.getPlanner(config);
+          plan = planner.findPlan(p);
+        }
       }
 
       // Solution found?
@@ -147,6 +179,7 @@ public class Main {
         Logger.log(Logger.INFO, "Validating ...");
         if (Validator.planIsValid(planningProblem, plan)) {
           Logger.log(Logger.INFO, "Plan has been found to be valid.");
+          printPlan(config, plan);
         }
       }
 

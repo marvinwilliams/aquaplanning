@@ -12,8 +12,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import edu.kit.aquaplanning.Configuration;
-import edu.kit.aquaplanning.grounding.RelaxedPlanningGraph;
-import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
+import edu.kit.aquaplanning.grounding.PlanningGraphGrounder;
 import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
@@ -335,8 +334,7 @@ public abstract class LiftedPlanner extends Planner {
   }
 
   protected PlanningProblem problem;
-  protected RelaxedPlanningGraph graph;
-  protected RelaxedPlanningGraphGrounder grounder;
+  protected PlanningGraphGrounder grounder;
 
   protected Map<Condition, Integer> predicates;
   protected Map<Operator, Integer> operators;

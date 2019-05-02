@@ -6,7 +6,7 @@ import java.io.IOException;
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.Configuration.HeuristicType;
 import edu.kit.aquaplanning.grounding.Grounder;
-import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
+import edu.kit.aquaplanning.grounding.PlanningGraphGrounder;
 import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
 import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
@@ -14,8 +14,8 @@ import edu.kit.aquaplanning.parsing.ProblemParser;
 import edu.kit.aquaplanning.planning.ForwardSearchPlanner;
 import edu.kit.aquaplanning.planning.GroundPlanner;
 import edu.kit.aquaplanning.planning.PortfolioParallelPlanner;
-import edu.kit.aquaplanning.planning.SimpleSatPlanner;
-import edu.kit.aquaplanning.planning.SearchStrategy.Mode;
+import edu.kit.aquaplanning.planning.datastructures.SearchStrategy.Mode;
+import edu.kit.aquaplanning.planning.sat.SimpleSatPlanner;
 import edu.kit.aquaplanning.validation.Validator;
 import junit.framework.TestCase;
 
@@ -64,7 +64,7 @@ public class TestParallelPlanning extends TestCase {
 	private void testPlannerOnBenchmark(GroundPlanner planner, String domain, String problem) throws IOException {
 		System.out.println("Testing planner on " + domain + ", " + problem);
 		PlanningProblem pp = new ProblemParser().parse(domain, problem);
-		Grounder grounder = new RelaxedPlanningGraphGrounder(new Configuration());
+		Grounder grounder = new PlanningGraphGrounder(new Configuration());
 		GroundPlanningProblem gpp = grounder.ground(pp);
 		Plan p = planner.findPlan(gpp);
 		if (p != null) {

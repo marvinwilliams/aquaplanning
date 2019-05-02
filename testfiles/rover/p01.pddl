@@ -5,7 +5,7 @@
 (:objects
     general - Lander
     colour high_res low_res - Mode
-    rover0 - Rover
+    rover0 rover1 - Rover
     rover0store - Store
     waypoint0 waypoint1 waypoint2 waypoint3 - Waypoint
     camera0 camera1 - Camera

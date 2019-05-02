@@ -11,6 +11,7 @@ import java.util.zip.ZipFile;
 import edu.kit.aquaplanning.model.ground.Action;
 import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
 import edu.kit.aquaplanning.model.ground.Plan;
+import edu.kit.aquaplanning.util.Logger;
 
 public class PlanParser {
 	
@@ -30,15 +31,27 @@ public class PlanParser {
 		}
 		HashMap<String, Action> actionMap = new HashMap<>();
 		for (Action a : gpp.getActions()) {
-			actionMap.put(a.getName(), a);
+			actionMap.put(a.getCleanedName(), a);
 		}
+		int lineNo = 1;
 		while (true) {
 			String line = reader.readLine();
 			if (line == null) {
 				break;
 			}
-			String actionName = line.split(":")[1].trim();
-			plan.appendAtBack(actionMap.get(actionName));
+			String[] words = line.split(":");
+			if (words.length < 2) {
+				Logger.log(Logger.ERROR, "Error: Plan file is syntactically invalid. (line " + lineNo + ")");
+				return null;
+			}
+			String actionName = words[1].trim();
+			Action action = actionMap.get(actionName);
+			if (action == null) {
+				Logger.log(Logger.ERROR, "Could not parse action \"" + actionName + "\". (line " + lineNo + ")");
+				return null;
+			}
+			plan.appendAtBack(action);
+			lineNo++;
 		}
 		reader.close();
 		if (zf != null) {

@@ -131,13 +131,13 @@ public class Action {
 		
 		// Apply effects
 		State newState = new State(state);
+		// Bitset effects
+		newState.removeAll(effectsNeg);
+		newState.addAll(effectsPos);
 		if (complexEffect != null) {
 			// Complex effect
 			newState = complexEffect.applyTo(state);
 		}
-		// Bitset effects
-		newState.addAll(effectsPos);
-		newState.removeAll(effectsNeg);
 		
 		// Apply (simple) conditional effects, if applicable
 		for (ConditionalEffect condEffect : conditionalEffects) {
@@ -148,8 +148,8 @@ public class Action {
 			
 			if (isActive) {
 				// -- yes: apply the consequences
-				newState.addAll(condEffect.getEffectsPos());
 				newState.removeAll(condEffect.getEffectsNeg());
+				newState.addAll(condEffect.getEffectsPos());
 			}
 		}
 		
@@ -167,12 +167,12 @@ public class Action {
 		
 		// Apply positive effects
 		State newState = new State(state);
+		// Bitset effects
+		newState.addAll(effectsPos);
 		if (complexEffect != null) {
 			// Complex effect
 			newState = complexEffect.applyRelaxedTo(state);
 		}
-		// Bitset effects
-		newState.addAll(effectsPos);
 		
 		// Apply (simple) positive conditional effects, if applicable
 		for (ConditionalEffect condEffect : conditionalEffects) {
@@ -261,6 +261,10 @@ public class Action {
 		return name;
 	}
 	
+	public String getCleanedName() {
+		return getName().replaceAll("\\$.*\\$", "").replaceAll("\\*.*\\*", "");
+	}
+	
 	public void setCost(int cost) {
 		this.cost = cost;
 	}
@@ -287,5 +291,13 @@ public class Action {
 
 	public AtomSet getEffectsNeg() {
 		return effectsNeg;
+	}
+
+	public Precondition getComplexPrecondition() {
+		return complexPrecondition;
+	}
+
+	public Effect getComplexEffect() {
+		return complexEffect;
 	}
 }

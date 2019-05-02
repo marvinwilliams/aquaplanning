@@ -11,7 +11,7 @@ import java.util.Stack;
 import java.util.function.BiPredicate;
 
 import edu.kit.aquaplanning.Configuration;
-import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
+import edu.kit.aquaplanning.grounding.PlanningGraphGrounder;
 import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
@@ -36,7 +36,7 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
     problem = p;
     Logger.log(Logger.INFO, "TIME0 Generate clauses");
     isGrounded = (o, a) -> a.getName().startsWith("?c") && false;
-    grounder = new RelaxedPlanningGraphGrounder(config);
+    grounder = new PlanningGraphGrounder(config);
     // initialize the SAT solver
     // SatSolver solver = new SatSolver();
     Logger.log(Logger.INFO, "TIME1 Generating clauses");

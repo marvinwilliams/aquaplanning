@@ -11,7 +11,7 @@ import java.util.function.BiPredicate;
 
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.ArgumentCombinationUtils;
-import edu.kit.aquaplanning.grounding.RelaxedPlanningGraphGrounder;
+import edu.kit.aquaplanning.grounding.PlanningGraphGrounder;
 import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
@@ -33,8 +33,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
   public Plan findPlan(PlanningProblem p) {
     problem = p;
     Logger.log(Logger.INFO, "TIME0 Grounding");
-    grounder = new RelaxedPlanningGraphGrounder(config);
-    graph = grounder.computeGraph(p);
+    grounder = new PlanningGraphGrounder(config);
     isGrounded = (o, a) -> a.getName().startsWith("?room") && false;
     // initialize the SAT solver
     // SatSolver solver = new SatSolver();
@@ -162,7 +161,7 @@ public class GroundLiftedSatPlanner extends LiftedPlanner {
     effectsPos = new ArrayList<>();
     effectsNeg = new ArrayList<>();
     rigidConditions = new HashSet<>();
-    for (Condition p : graph.getLiftedState(graph.getCurrentLayer())) {
+    for (Condition p : graph.getState(graph.getCurrentLayer())) {
       // System.out.println(p);
       predicates.put(p, predicates.size());
       predicateSatId.add(satCounter++);

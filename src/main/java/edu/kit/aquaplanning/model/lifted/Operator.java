@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition;
+import edu.kit.aquaplanning.model.lifted.htn.Task;
 
 public class Operator {
 
@@ -105,6 +106,22 @@ public class Operator {
 		out += " POST: ";
 		out += effect;
 		return out;
+	}
+	
+	public String toActionString() {
+		String out = "";
+		out += "(" + name + " ";
+		for (Argument arg : arguments) {
+			out += arg.getName() + " ";
+		}
+		out = out.substring(0, out.length()-1) + ")";
+		return out;
+	}
+	
+	public Task toTask() {
+		Task task = new Task(name);
+		arguments.forEach(arg -> task.addArgument(arg));
+		return task;
 	}
 
 	@Override

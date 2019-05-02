@@ -80,8 +80,15 @@ public abstract class Planner {
           return false;
         case eLiftedSat:
           return false;
+        case parallel:
+          return true;
+		case greedy:
+          return true;
+		case seqpfolio:
+          return true;
+		default:
+            return true;
 		}
-		return true;
 	}
 	
 	@Override

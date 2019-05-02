@@ -1,6 +1,9 @@
 package edu.kit.aquaplanning;
 
-import edu.kit.aquaplanning.planning.SearchStrategy;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+
+import edu.kit.aquaplanning.planning.datastructures.SearchStrategy;
 import edu.kit.aquaplanning.util.Logger;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -38,6 +41,12 @@ public class Configuration {
 	@Option(paramLabel = "satFile", names = "-SAT", description = "Output SAT formulae to file(s)")
 	public String satFormulaFile;
 	
+	/* Validation */
+	
+	@Option(paramLabel = "planFile", names = {"-?", "--validate"}, description = "Validate the plan "
+			+ "in the provided file (and don't do planning)")
+	public String planFileToValidate;
+	
 	/* Computational bounds */
 	
 	@Option(paramLabel = "maxIterations", names = {"-m", "--max-iterations"}, 
@@ -74,12 +83,14 @@ public class Configuration {
 	@Option(names = {"-kd", "--keep-disjunctions"}, description = "Do not compile disjunctive conditions "
 			+ "into simple actions, but keep complex logical structure during planning")
 	public boolean keepDisjunctions;
-	@Option(names = {"-kq", "--keep-equalities"}, description = "Do not resolve equality conditions, "
-			+ "but add them as explicit atoms to the initial state")
-	public boolean keepEqualities;
-	@Option(names = {"-nc", "--no-keep-cond-effects"}, description = "Compile conditional effects "
-			+ "into multiple STRIPS operators (implies translation into DNF)")
+	@Option(names = {"-kr", "--keep-rigid-conditions"}, description = "Do not simplify away conditions "
+			+ "that are rigid according to the planning graph (-kr collides with -kd)")
+	public boolean keepRigidConditions;
+	@Option(names = {"-rc", "--remove-cond-effects"}, description = "Compile conditional effects "
+			+ "into multiple STRIPS operators (-rc collides with -kd)")
 	public boolean eliminateConditionalEffects;
+	@Option(names = {"-ko", "--keep-action-costs"}, description = "Do not discard action cost statements")
+	public boolean keepActionCosts;
 	
 	
 	/* 
@@ -87,7 +98,7 @@ public class Configuration {
 	 */
 	
 	public enum PlannerType {
-		forwardSSS, satBased, hegemannSat, parallel, pLiftedSat, gLiftedSat, hLiftedSat, iLiftedSat, i2LiftedSat, eLiftedSat;
+		forwardSSS, satBased, hegemannSat, parallel, pLiftedSat, gLiftedSat, hLiftedSat, iLiftedSat, i2LiftedSat, eLiftedSat, greedy, segpfolio;
 	}
 	@Option(paramLabel = "plannerType", names = {"-p", "--planner"}, 
 			description = "Planner type to use: " + USAGE_OPTIONS_AND_DEFAULT, 
@@ -128,6 +139,15 @@ public class Configuration {
 			defaultValue = "1337")
 	public int seed = 1337;
 	
+	/* SAT-based planning */
+	
+	public enum SatSolverMode {
+		sat4j, ipasir4j;
+	}
+	@Option(names = {"--sat-mode"}, description = "Which SAT solver to use, i.e. internal SAT4j or external solver via ipasir4j: "
+			+ USAGE_OPTIONS_AND_DEFAULT, defaultValue = "sat4j")
+	public SatSolverMode satSolverMode;
+	
 	
 	/* 
 	 * Post-processing 
@@ -149,35 +169,57 @@ public class Configuration {
 	public Configuration copy() {
 		
 		Configuration config = new Configuration();
-		config.domainFile = domainFile;
-		config.problemFile = problemFile;
-		config.planOutputFile = planOutputFile;
-		config.maxIterations = maxIterations;
-		config.maxTimeSeconds = maxTimeSeconds;
-		config.numThreads = numThreads;
-		config.keepDisjunctions = keepDisjunctions;
-		config.keepEqualities = keepEqualities;
-		config.plannerType = plannerType;
-		config.heuristic = heuristic;
-		config.heuristicWeight = heuristicWeight;
-		config.searchStrategy = searchStrategy;
-		config.revisitStates = revisitStates;
-		config.seed = seed;
-		config.optimizePlan = optimizePlan;
-		config.startTimeMillis = startTimeMillis;
-		config.searchTimeSeconds = searchTimeSeconds;
+		try {
+			for (Field field : this.getClass().getDeclaredFields()) {
+				if (!Modifier.isFinal(field.getModifiers()))
+					field.set(config, field.get(this));
+			}
+		} catch (IllegalArgumentException | IllegalAccessException e) {
+			e.printStackTrace();
+		}
 		return config;
 	}
 
 	@Override
 	public String toString() {
-		return "Configuration \n domainFile=" + domainFile + "\n problemFile=" + problemFile + "\n planOutputFile="
-				+ planOutputFile + "\n maxIterations=" + maxIterations + "\n maxTimeSeconds=" + maxTimeSeconds
-				+ "\n searchTimeSeconds=" + searchTimeSeconds + "\n numThreads=" + numThreads + "\n verbosityLevel="
-				+ verbosityLevel + "\n keepDisjunctions=" + keepDisjunctions + "\n keepEqualities=" + keepEqualities
-				+ "\n plannerType=" + plannerType + "\n heuristic=" + heuristic + "\n heuristicWeight=" + heuristicWeight
-				+ "\n searchStrategy=" + searchStrategy + "\n revisitStates=" + revisitStates + "\n seed=" + seed
-				+ "\n optimizePlan=" + optimizePlan + "\n startTimeMillis=" + startTimeMillis + "\n";
+		
+		StringBuilder out = new StringBuilder("Configuration {\n");
+		try {
+			for (Field field : this.getClass().getDeclaredFields()) {
+				if (!Modifier.isFinal(field.getModifiers()))
+					out.append("  " + field.getName() + " : " + field.get(this) + "\n");
+			}
+		} catch (IllegalArgumentException | IllegalAccessException e) {
+			e.printStackTrace();
+		}
+		out.append("}");
+		return out.toString();
 	}
-	
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		
+		try {
+			for (Field field : this.getClass().getDeclaredFields()) {
+				Object obj = field.get(this);
+				if (!Modifier.isFinal(field.getModifiers()))
+					result = prime * result + (obj == null ? 0 : obj.hashCode());
+			}
+		} catch (IllegalArgumentException | IllegalAccessException e) {
+			e.printStackTrace();
+		}
+		
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (obj == null) return false;
+		if (!(obj instanceof Configuration)) {
+			return false;
+		}
+		return hashCode() == ((Configuration) obj).hashCode();
+	}
 }
