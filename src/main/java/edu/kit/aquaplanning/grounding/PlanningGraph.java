@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiPredicate;
 
 import edu.kit.aquaplanning.grounding.datastructures.LiftedState;
 import edu.kit.aquaplanning.grounding.datastructures.OperatorIndex;
@@ -12,10 +11,10 @@ import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
 import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition;
+import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
 import edu.kit.aquaplanning.model.lifted.condition.Condition;
 import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
 import edu.kit.aquaplanning.model.lifted.condition.ConsequentialCondition;
-import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
 import edu.kit.aquaplanning.util.Logger;
 
 /**
