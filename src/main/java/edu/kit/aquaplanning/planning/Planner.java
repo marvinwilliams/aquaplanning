@@ -66,8 +66,6 @@ public abstract class Planner {
           return true;
 		case hegemannSat:
           return true;
-		case parallel:
-          return true;
         case pLiftedSat:
           return false;
         case gLiftedSat:
