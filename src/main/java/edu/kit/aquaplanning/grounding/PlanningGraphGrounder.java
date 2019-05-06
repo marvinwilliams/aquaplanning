@@ -3,6 +3,7 @@ package edu.kit.aquaplanning.grounding;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import edu.kit.aquaplanning.Configuration;
@@ -23,7 +24,6 @@ import edu.kit.aquaplanning.util.Logger;
  * until a fixpoint is reached.
  */
 public class PlanningGraphGrounder extends BaseGrounder {
-
   private PlanningGraph graph;
   private boolean reduceAtoms;
 
@@ -31,6 +31,10 @@ public class PlanningGraphGrounder extends BaseGrounder {
     super(config);
   }
 
+  /**
+   * Grounds the entire problem.
+   */
+  @Override
   public GroundPlanningProblem ground(PlanningProblem problem) {
 
     setProblem(problem);
@@ -115,11 +119,11 @@ public class PlanningGraphGrounder extends BaseGrounder {
     return new LiftedState(graph.getLiftedState(graph.getCurrentLayer()));
   }
 
-  public Set<Condition> getStateConditions() {
-    return graph.getLiftedState(graph.getCurrentLayer());
-  }
-
   public List<Operator> getFilteredActions() {
     return graph.getFilteredActions();
+  }
+
+  public Map<String, Integer> getArgumentIndices() {
+    return graph.getArgumentIndices();
   }
 }
