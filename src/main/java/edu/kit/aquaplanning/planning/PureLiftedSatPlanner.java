@@ -32,7 +32,7 @@ public class PureLiftedSatPlanner extends LiftedPlanner {
   }
 
   @Override
-  public Plan findPlan(PlanningProblem p) {
+  public Plan findPlan(PlanningProblem p, PlanningGraphGrounder grounder) {
     problem = p;
     Logger.log(Logger.INFO, "TIME0 Generate clauses");
     isGrounded = (o, a) -> a.getName().startsWith("?c") && false;

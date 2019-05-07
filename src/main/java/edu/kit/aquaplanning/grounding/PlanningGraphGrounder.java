@@ -119,6 +119,10 @@ public class PlanningGraphGrounder extends BaseGrounder {
     return new LiftedState(graph.getLiftedState(graph.getCurrentLayer()));
   }
 
+  public Set<Condition> getStateList() {
+    return graph.getLiftedState(graph.getCurrentLayer());
+  }
+
   public List<Operator> getFilteredActions() {
     return graph.getFilteredActions();
   }

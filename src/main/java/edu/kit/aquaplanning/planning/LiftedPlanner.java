@@ -35,22 +35,24 @@ public abstract class LiftedPlanner extends Planner {
   /**
    * Attempt to find a solution plan for the provided problem.
    */
-  public abstract Plan findPlan(PlanningProblem problem);
+  public abstract Plan findPlan(PlanningProblem problem, PlanningGraphGrounder grounder);
 
   public static LiftedPlanner getPlanner(Configuration config) {
     switch (config.plannerType) {
-    case pLiftedSat:
-      return new PureLiftedSatPlanner(config);
-    case gLiftedSat:
-      return new GroundLiftedSatPlanner(config);
-    case hLiftedSat:
-      return new HelperLiftedSatPlanner(config);
-    case iLiftedSat:
-      return new IsolateLiftedSatPlanner(config);
-    case i2LiftedSat:
-      return new Isolate2LiftedSatPlanner(config);
-    case eLiftedSat:
-      return new ExistsLiftedSatPlanner(config);
+    // case pLiftedSat:
+    // return new PureLiftedSatPlanner(config);
+    // case gLiftedSat:
+    // return new GroundLiftedSatPlanner(config);
+    // case hLiftedSat:
+    // return new HelperLiftedSatPlanner(config);
+    // case iLiftedSat:
+    // return new IsolateLiftedSatPlanner(config);
+    // case i2LiftedSat:
+    // return new Isolate2LiftedSatPlanner(config);
+    // case eLiftedSat:
+    // return new ExistsLiftedSatPlanner(config);
+    case liftedSat:
+      return new LiftedSatPlanner(config);
     default:
       return null;
     }
@@ -267,21 +269,21 @@ public abstract class LiftedPlanner extends Planner {
       Logger.log(Logger.INFO, "TIME2 Running incplan");
       Process proc = null;
       switch (config.satSolver) {
-        case minisat:
-          Logger.log(Logger.INFO, "Using minisat");
-          proc = run.exec("./incplan-minisat220 " + file.getPath());
-          break;
-        case picosat:
-          Logger.log(Logger.INFO, "Using picosat");
-          proc = run.exec("./incplan-picosat961 " + file.getPath());
-          break;
-        case glucose:
-          Logger.log(Logger.INFO, "Using glucose");
-          proc = run.exec("./incplan-glucose4 " + file.getPath());
-          break;
-        default:
-          Logger.log(Logger.ERROR, "Sat solver unrecoginzed");
-          System.exit(1);
+      case minisat:
+        Logger.log(Logger.INFO, "Using minisat");
+        proc = run.exec("./incplan-minisat220 " + file.getPath());
+        break;
+      case picosat:
+        Logger.log(Logger.INFO, "Using picosat");
+        proc = run.exec("./incplan-picosat961 " + file.getPath());
+        break;
+      case glucose:
+        Logger.log(Logger.INFO, "Using glucose");
+        proc = run.exec("./incplan-glucose4 " + file.getPath());
+        break;
+      default:
+        Logger.log(Logger.ERROR, "Sat solver unrecoginzed");
+        System.exit(1);
       }
       proc.waitFor();
       Logger.log(Logger.INFO, "TIME3 Finished");

@@ -99,6 +99,9 @@ public class Main {
       Logger.log(Logger.INFO, "Parsing complete.\n");
 
       // Step 2: Grounding (to get "flat" sets of actions and atoms)
+      if Planner.isGround(config) {
+
+      }
       Logger.log(Logger.INFO, "Grounding ...");
       PlanningGraphGrounder grounder = new PlanningGraphGrounder(config);
       GroundPlanningProblem planningProblem = grounder.ground(p);
@@ -149,7 +152,7 @@ public class Main {
           plan = planner.findPlan(planningProblem);
         } else {
           LiftedPlanner planner = LiftedPlanner.getPlanner(config);
-          plan = planner.findPlan(p);
+          plan = planner.findPlan(p, grounder);
         }
       }
 
