@@ -3,6 +3,7 @@ package edu.kit.aquaplanning.model.lifted.condition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import edu.kit.aquaplanning.model.lifted.Argument;
 
@@ -11,40 +12,41 @@ public class Quantification extends AbstractCondition {
 	public enum Quantifier {
 		universal, existential;
 	}
+
 	private Quantifier quantifier;
 	private List<Argument> variables;
 	private AbstractCondition condition;
-	
+
 	public Quantification(Quantifier q) {
 
 		super(ConditionType.quantification);
 		this.quantifier = q;
 		this.variables = new ArrayList<>();
 	}
-	
+
 	public void addVariable(Argument arg) {
 		variables.add(arg);
 	}
-	
+
 	public void setCondition(AbstractCondition condition) {
 		this.condition = condition;
 	}
-	
+
 	public Quantifier getQuantifier() {
 		return quantifier;
 	}
-	
+
 	public List<Argument> getVariables() {
 		return variables;
 	}
-	
+
 	public AbstractCondition getCondition() {
 		return condition;
 	}
-	
+
 	@Override
 	public Quantification getConditionBoundToArguments(List<Argument> refArgs, List<Argument> argValues) {
-		
+
 		Quantification q = new Quantification(quantifier);
 		q.setCondition(condition.getConditionBoundToArguments(refArgs, argValues));
 		for (Argument arg : variables) {
@@ -52,14 +54,13 @@ public class Quantification extends AbstractCondition {
 		}
 		return q;
 	}
-	
+
 	@Override
 	public AbstractCondition simplify(boolean negated) {
-		
+
 		Quantifier quantifier = null;
 		if (negated) {
-			quantifier = (this.quantifier == Quantifier.existential ? 
-					Quantifier.universal : Quantifier.existential);
+			quantifier = (this.quantifier == Quantifier.existential ? Quantifier.universal : Quantifier.existential);
 		} else {
 			quantifier = this.quantifier;
 		}
@@ -69,20 +70,20 @@ public class Quantification extends AbstractCondition {
 		q.setCondition(condition.simplify(negated));
 		return q;
 	}
-	
+
 	@Override
 	public AbstractCondition getDNF() {
-		
+
 		Quantification q = new Quantification(quantifier);
 		for (Argument var : variables)
 			q.addVariable(var.copy());
 		q.setCondition(condition.getDNF());
 		return q;
 	}
-	
+
 	@Override
 	public String toString() {
-		
+
 		String out = "";
 		for (Argument var : variables) {
 			out += (quantifier == Quantifier.existential ? "∃" : "∀") + var + " ";
@@ -126,7 +127,7 @@ public class Quantification extends AbstractCondition {
 			return false;
 		return true;
 	}
-	
+
 	@Override
 	public Quantification copy() {
 		Quantification q = new Quantification(quantifier);
@@ -134,27 +135,33 @@ public class Quantification extends AbstractCondition {
 		q.variables.addAll(variables);
 		return q;
 	}
-	
+
 	@Override
 	public AbstractCondition traverse(Function<AbstractCondition, AbstractCondition> map, int recurseMode) {
-		
+
 		Quantification result;
-		
+
 		// Apply the inner function, if tail recursion is done
 		if (recurseMode == AbstractCondition.RECURSE_TAIL) {
 			result = (Quantification) map.apply(this);
 		} else {
 			result = copy();
 		}
-		
+
 		// Recurse
 		result.condition = (result.condition.traverse(map, recurseMode));
-		
+
 		// Apply the inner function, if head recursion is done
 		if (recurseMode == AbstractCondition.RECURSE_HEAD) {
 			return map.apply(result);
 		}
-		
+
 		return result;
+	}
+	
+	@Override
+	public boolean holds(Predicate<Condition> liftedStateMap) {
+		throw new RuntimeException("The evaluation of lifted quantifications is not supported yet. "
+				+ "Please try evaluating the condition's ground representation instead.");
 	}
 }

@@ -3,7 +3,7 @@ package edu.kit.aquaplanning.planning.heuristic;
 import java.util.List;
 import java.util.ArrayList;
 import edu.kit.aquaplanning.model.ground.Action;
-import edu.kit.aquaplanning.model.ground.Plan;
+import edu.kit.aquaplanning.model.ground.ActionPlan;
 import edu.kit.aquaplanning.model.ground.State;
 import edu.kit.aquaplanning.planning.datastructures.GroundRelaxedPlanningGraph;
 import edu.kit.aquaplanning.planning.datastructures.SearchNode;
@@ -33,7 +33,8 @@ public class FroleyksHeuristic extends Heuristic {
 		// Traverse deletion-relaxed planning graph
 		List<State> states = new ArrayList<>();
 		states.add(state);
-		GroundRelaxedPlanningGraph graph = new GroundRelaxedPlanningGraph(groundProblem, state, groundProblem.getActions());
+		GroundRelaxedPlanningGraph graph = new GroundRelaxedPlanningGraph(groundProblem, state,
+				groundProblem.getActions());
 		State g_hat = new State(groundProblem.getGoal().getAtoms());
 		while (graph.hasNextLayer()) {
 			State nextState = graph.computeNextLayer();
@@ -41,7 +42,7 @@ public class FroleyksHeuristic extends Heuristic {
 			// Goal reached?
 			if (nextState.isSupersetOf(g_hat)) {
 				List<Action> allActions = groundProblem.getActions();
-				Plan p = new Plan();
+				ActionPlan p = new ActionPlan();
 				for (int stateIndex = states.size() - 2; stateIndex > 0; --stateIndex) {
 					State s_hat = states.get(stateIndex);
 					List<Action> A = new ArrayList<>();
@@ -72,6 +73,6 @@ public class FroleyksHeuristic extends Heuristic {
 		}
 
 		// Goals could not be reached: unsolvable from this state
-      return Integer.MAX_VALUE;
+		return Integer.MAX_VALUE;
 	}
 }

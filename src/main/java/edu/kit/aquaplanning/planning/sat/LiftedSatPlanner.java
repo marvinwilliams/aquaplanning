@@ -10,16 +10,16 @@ import java.util.stream.Collectors;
 
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.PlanningGraphGrounder;
+import edu.kit.aquaplanning.model.ground.ActionPlan;
 import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
-import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
 import edu.kit.aquaplanning.model.lifted.Predicate;
 import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition;
+import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
 import edu.kit.aquaplanning.model.lifted.condition.Condition;
 import edu.kit.aquaplanning.model.lifted.condition.ConditionSet;
-import edu.kit.aquaplanning.model.lifted.condition.AbstractCondition.ConditionType;
 import edu.kit.aquaplanning.planning.LiftedPlanner;
 import edu.kit.aquaplanning.sat.SymbolicReachabilityFormula;
 import edu.kit.aquaplanning.util.Logger;
@@ -67,7 +67,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       operatorArgumentsToGround.add(computeGroundArguments(o, numArgs));
     }
     Set<Operator> partiallyGroundedOperators = new HashSet<Operator>();
-    //Get the partially grounded operator for each grounded operator
+    // Get the partially grounded operator for each grounded operator
     for (Operator o : groundedOperators) {
       int idx = operatorIndex.get(o.getName());
       Operator liftedOperator = liftedOperators.get(idx);
@@ -85,7 +85,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   @Override
-  public Plan plan(PlanningProblem problem) {
+  public ActionPlan plan(PlanningProblem problem) {
     PlanningGraphGrounder grounder = new PlanningGraphGrounder(config);
     GroundPlanningProblem groundedProblem = grounder.ground(problem);
 
@@ -128,7 +128,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
           groundArgs.add(null);
         }
         partiallyGroundedOperator.getOperatorWithGroundArguments(groundArgs);
-        //TODO add lifted arguments to possible args of partially grounded;
+        // TODO add lifted arguments to possible args of partially grounded;
+      }
     }
     {
       Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(o.getPrecondition());
@@ -157,11 +158,6 @@ public class LiftedSatPlanner extends LiftedPlanner {
     for (Operator o : problem.getOperators()) {
     }
     return null;
-  }
-
-  @Override
-  public boolean validatePlan(Plan plan) {
-    return false;
   }
 
   private SymbolicReachabilityFormula encoding;
