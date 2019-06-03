@@ -128,4 +128,8 @@ public class PlanningGraphGrounder extends BaseGrounder {
 	public Map<String, Integer> getArgumentIndices() {
 		return graph.getArgumentIndices();
 	}
+
+    public List<Condition> getUnreachablConditions(Operator op, LiftedState state) {
+      return graph.getUnreachablePreconditions(op, state);
+    }
 }
