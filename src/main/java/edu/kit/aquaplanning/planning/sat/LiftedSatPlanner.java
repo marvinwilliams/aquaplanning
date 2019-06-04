@@ -44,6 +44,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       size = 0;
       conditionPos = new ArrayList<>();
       operatorPos = new ArrayList<>();
+      this.condition = condition;
       for (int i = 0; i < condition.getNumArgs(); i++) {
         Argument arg = condition.getArguments().get(i);
         int aIdx = arg.isConstant() ? -1 : operator.getArguments().indexOf(condition.getArguments().get(i));
@@ -71,10 +72,15 @@ public class LiftedSatPlanner extends LiftedPlanner {
       return operatorPos.get(i);
     }
 
+    public Condition getCondition() {
+      return condition;
+    }
+
     private int size;
     private int operatorIndex;
     private List<Integer> conditionPos;
     private List<Integer> operatorPos;
+    private Condition condition;
   }
 
   class OperatorParameterList {
@@ -125,8 +131,16 @@ public class LiftedSatPlanner extends LiftedPlanner {
       }
     }
 
+    public int size() {
+      return arguments.size();
+    }
+
     public ArgumentMapping getMapping() {
       return mapping;
+    }
+
+    public Argument getArgument(int i) {
+      return arguments.get(i);
     }
 
     List<Argument> getArguments() {
@@ -158,25 +172,25 @@ public class LiftedSatPlanner extends LiftedPlanner {
     return parameterSatVars.get(operatorIndex).get(parameterIndex).get(argumentIndex);
   }
 
-  private List<Integer> implyCondition(ArgumentMapping mapping, List<Argument> conditionArguments) {
-    int operatorIndex = mapping.getOperatorIndex();
+  private List<Integer> implyCondition(ArgumentAssignment assignment) {
+    int operatorIndex = assignment.getMapping().getOperatorIndex();
     List<Integer> clause = new ArrayList<>();
     clause.add(-operatorSatVars.get(operatorIndex));
-    for (int i = 0; i < mapping.size(); i++) {
-      clause.add(-getParameterSatVar(operatorIndex, mapping.getOperatorPos(i),
-          conditionArguments.get(mapping.getConditionPos(i))));
+    for (int i = 0; i < assignment.size(); i++) {
+      clause.add(
+          -getParameterSatVar(operatorIndex, assignment.getMapping().getOperatorPos(i), assignment.getArgument(i)));
     }
     return clause;
   }
 
   private int getConditionSatVar(Condition condition, boolean thisStep) {
-    int cIdx = conditions.indexOf(condition);
+    int cIdx = conditions.indexOf(condition.withoutNegation());
     if (cIdx == -1) {
       // If the condition is not known, it is either rigid true or false
       if (initialState.contains(condition)) {
         return SAT;
       } else {
-        return UNSAT;
+        return -SAT;
       }
     }
     return (condition.isNegated() ? -1 : 1) * (conditionSatVars.get(cIdx) + (thisStep ? 0 : numVars));
@@ -184,6 +198,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   private List<Condition> getConditionList(AbstractCondition condition) {
     Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(condition);
+    List<Condition> conditionList = new ArrayList<>();
     if (!split.getRight().getConditions().isEmpty()) {
       Logger.log(Logger.WARN, "Complex conditions are ignored");
     }
@@ -191,12 +206,13 @@ public class LiftedSatPlanner extends LiftedPlanner {
       if (c.getConditionType() != ConditionType.atomic) {
         Logger.log(Logger.WARN, "Conditions are expected to be atomic");
       }
-      conditionSet.add((Condition) c);
+      conditionList.add((Condition) c);
     }
+    return conditionList;
   }
 
-  public void addParameterImpliesPrecondition(int operatorIndex, Condition c, ArgumentMapping mapping) {
-    List<Integer> clause = implyCondition(mapping, c.getArguments());
+  public void addParameterImpliesPrecondition(ArgumentAssignment assignment) {
+    List<Integer> clause = implyCondition(assignment);
     clause.add(getConditionSatVar(c, true));
     encoding.universalClauses.addClause(clause.stream().mapToInt(x -> x).toArray());
   }
@@ -204,6 +220,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
   public void addParameterImpliesEffect(int operatorIndex, Condition c, ArgumentMapping mapping) {
     List<Integer> clause = implyCondition(mapping, c.getArguments());
     clause.add(getConditionSatVar(c, false));
+    encoding.transitionClauses.addClause(clause.stream().mapToInt(x -> x).toArray());
   }
 
   public void setPartiallyGroundedOperators(List<Operator> liftedOperators, List<Operator> groundedOperators) {
@@ -252,8 +269,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   public void initializeSatIds() {
-    // SAT/UNSAT
-    int satVar = 3;
+    // SAT variable
+    int satVar = 2;
     operatorSatVars = new ArrayList<>();
     parameterSatVars = new ArrayList<>();
     conditionSatVars = new ArrayList<>();
@@ -451,7 +468,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     encoding = new SymbolicReachabilityFormula();
     encoding.universalClauses = new SatFormula(numVars);
     encoding.transitionClauses = new SatFormula(numVars);
-    encoding.universalClauses.addClause(new int[] { 1, 2, 3 });
+    encoding.universalClauses.addClause(new int[] { 1 });
     atMostOneParameter();
     parametersImplyConditions();
     interference();
@@ -460,7 +477,6 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   private static int SAT = 1;
-  private static int UNSAT = 2;
   private Set<Condition> initialState;
   private PlanningGraphGrounder grounder;
   private List<Integer> partiallyGroundedOperatorLookup;
