@@ -6,8 +6,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.ArgumentCombinationUtils;
@@ -44,6 +42,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       size = 0;
       conditionPos = new ArrayList<>();
       operatorPos = new ArrayList<>();
+      refArgs = new ArrayList<>();
       this.condition = condition;
       for (int i = 0; i < condition.getNumArgs(); i++) {
         Argument arg = condition.getArguments().get(i);
@@ -51,6 +50,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
         if (aIdx >= 0) {
           conditionPos.add(i);
           operatorPos.add(aIdx);
+          refArgs.add(arg);
           size++;
         }
       }
@@ -72,12 +72,17 @@ public class LiftedSatPlanner extends LiftedPlanner {
       return operatorPos.get(i);
     }
 
+    public List<Argument> getRefArgs() {
+      return refArgs;
+    }
+
     public Condition getCondition() {
       return condition;
     }
 
     private int size;
     private int operatorIndex;
+    private List<Argument> refArgs;
     private List<Integer> conditionPos;
     private List<Integer> operatorPos;
     private Condition condition;
@@ -118,6 +123,15 @@ public class LiftedSatPlanner extends LiftedPlanner {
       return possibleArguments.get(i);
     }
 
+    public List<List<Argument>> getPossibleArguments(ArgumentMapping mapping) {
+      List<List<Argument>> args = new ArrayList<>();
+      for (int i = 0; i < mapping.size(); i++) {
+        int operatorPos = mapping.getOperatorPos(i);
+        args.add(possibleArguments.get(operatorPos));
+      }
+      return args;
+    }
+
     List<List<Argument>> possibleArguments;
     List<Integer> freeParameters;
   }
@@ -129,6 +143,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       for (int i = 0; i < mapping.size(); i++) {
         arguments.add(conditionArguments.get(mapping.getConditionPos(i)));
       }
+      condition = mapping.getCondition().getConditionBoundToArguments(mapping.getRefArgs(), conditionArguments);
     }
 
     public int size() {
@@ -143,12 +158,60 @@ public class LiftedSatPlanner extends LiftedPlanner {
       return arguments.get(i);
     }
 
+    public Condition getCondition() {
+      return condition;
+    }
+
     List<Argument> getArguments() {
       return arguments;
     }
 
+    private Condition condition;
     private ArgumentMapping mapping;
     private List<Argument> arguments;
+  }
+
+  class OperatorLookup {
+    public OperatorLookup() {
+      posPreconditions = new HashMap<>();
+      negPreconditions = new HashMap<>();
+      posEffects = new HashMap<>();
+      negEffects = new HashMap<>();
+    }
+
+    public void addAssignment(ArgumentAssignment assignment, boolean isPositive, boolean isEffect) {
+      Condition condition = assignment.getCondition().withoutNegation();
+      if (isEffect) {
+        if (isPositive) {
+          posEffects.putIfAbsent(condition, new ArrayList<>());
+          posEffects.get(condition).add(assignment);
+        } else {
+          negEffects.putIfAbsent(condition, new ArrayList<>());
+          negEffects.get(condition).add(assignment);
+        }
+      } else {
+        if (isPositive) {
+          posPreconditions.putIfAbsent(condition, new ArrayList<>());
+          posPreconditions.get(condition).add(assignment);
+        } else {
+          negPreconditions.putIfAbsent(condition, new ArrayList<>());
+          negPreconditions.get(condition).add(assignment);
+        }
+      }
+    }
+
+    public List<ArgumentAssignment> getAssignments(Condition condition, boolean isPositive, boolean isEffect) {
+      return isPositive
+          ? (isEffect ? posEffects.getOrDefault(condition, new ArrayList<>())
+              : posPreconditions.getOrDefault(condition, new ArrayList<>()))
+          : (isEffect ? negEffects.getOrDefault(condition, new ArrayList<>())
+              : negPreconditions.getOrDefault(condition, new ArrayList<>()));
+    }
+
+    Map<Condition, List<ArgumentAssignment>> posPreconditions;
+    Map<Condition, List<ArgumentAssignment>> negPreconditions;
+    Map<Condition, List<ArgumentAssignment>> posEffects;
+    Map<Condition, List<ArgumentAssignment>> negEffects;
   }
 
   public LiftedSatPlanner(Configuration config) {
@@ -187,7 +250,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
     int cIdx = conditions.indexOf(condition.withoutNegation());
     if (cIdx == -1) {
       // If the condition is not known, it is either rigid true or false
-      if (initialState.contains(condition)) {
+      if (condition.isNegated() && !initialState.contains(condition)) {
+        return SAT;
+      } else if (!condition.isNegated() && initialState.contains(condition)) {
         return SAT;
       } else {
         return -SAT;
@@ -211,16 +276,14 @@ public class LiftedSatPlanner extends LiftedPlanner {
     return conditionList;
   }
 
-  public void addParameterImpliesPrecondition(ArgumentAssignment assignment) {
+  public void addParameterImpliesCondition(ArgumentAssignment assignment, boolean isEffect) {
     List<Integer> clause = implyCondition(assignment);
-    clause.add(getConditionSatVar(c, true));
-    encoding.universalClauses.addClause(clause.stream().mapToInt(x -> x).toArray());
-  }
-
-  public void addParameterImpliesEffect(int operatorIndex, Condition c, ArgumentMapping mapping) {
-    List<Integer> clause = implyCondition(mapping, c.getArguments());
-    clause.add(getConditionSatVar(c, false));
-    encoding.transitionClauses.addClause(clause.stream().mapToInt(x -> x).toArray());
+    clause.add(getConditionSatVar(assignment.getMapping().getCondition(), !isEffect));
+    if (isEffect) {
+      encoding.transitionClauses.addClause(clause.stream().mapToInt(x -> x).toArray());
+    } else {
+      encoding.universalClauses.addClause(clause.stream().mapToInt(x -> x).toArray());
+    }
   }
 
   public void setPartiallyGroundedOperators(List<Operator> liftedOperators, List<Operator> groundedOperators) {
@@ -325,46 +388,37 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   public void parametersImplyConditions() {
+    operatorLookup = new OperatorLookup();
     for (int oIdx = 0; oIdx < partiallyGroundedOperators.size(); oIdx++) {
-      final int oIdxCopy = oIdx;
       Operator partiallyGroundedOperator = partiallyGroundedOperators.get(oIdx);
-      // List<List<Argument>> operatorArguments = possibleArguments.get(oIdx);
-      partiallyGroundedOperator.getPrecondition().traverse(c -> {
-        if (c.getConditionType() == ConditionType.atomic) {
-          Condition liftedCondition = (Condition) c;
-          ArgumentMapping mapping = new ArgumentMapping(partiallyGroundedOperator, liftedCondition);
-          List<List<Argument>> args = new ArrayList<>();
-          List<Argument> refArgs = new ArrayList<>();
-          for (int i = 0; i < mapping.size(); i++) {
-            refArgs.add(liftedCondition.getArguments().get(mapping.getConditionPos(i)));
-            args.add(possibleArguments.get(oIdxCopy).getPossibleArguments(mapping.getOperatorPos(i)));
-          }
+      {
+        List<Condition> preconditions = getConditionList(partiallyGroundedOperator.getPrecondition());
+        for (Condition condition : preconditions) {
+          ArgumentMapping mapping = new ArgumentMapping(partiallyGroundedOperator, condition);
+          List<List<Argument>> args = possibleArguments.get(oIdx).getPossibleArguments(mapping);
           ArgumentCombinationUtils.Iterator argumentIterator = new ArgumentCombinationUtils.Iterator(args);
-          argumentIterator.forEachRemaining(assignment -> {
-            Condition groundedCond = liftedCondition.getConditionBoundToArguments(refArgs, assignment);
-            addParameterImpliesPrecondition(partiallyGroundedOperator, groundedCond, mapping);
+          argumentIterator.forEachRemaining(groundedArgs -> {
+            Condition groundedCondition = condition.getConditionBoundToArguments(mapping.getRefArgs(), groundedArgs);
+            ArgumentAssignment assignment = new ArgumentAssignment(mapping, groundedCondition.getArguments());
+            addParameterImpliesCondition(assignment, false);
+            operatorLookup.addAssignment(assignment, false);
           });
         }
-        return c;
-      }, AbstractCondition.RECURSE_HEAD);
-      partiallyGroundedOperator.getEffect().traverse(c -> {
-        if (c.getConditionType() == ConditionType.atomic) {
-          Condition liftedCondition = (Condition) c;
-          ArgumentMapping mapping = new ArgumentMapping(partiallyGroundedOperator, liftedCondition);
-          List<List<Argument>> args = new ArrayList<>();
-          List<Argument> refArgs = new ArrayList<>();
-          for (int i = 0; i < mapping.size(); i++) {
-            refArgs.add(liftedCondition.getArguments().get(mapping.getConditionPos(i)));
-            args.add(possibleArguments.get(oIdxCopy).getPossibleArguments(mapping.getOperatorPos(i)));
-          }
+      }
+      {
+        List<Condition> effects = getConditionList(partiallyGroundedOperator.getEffect());
+        for (Condition condition : effects) {
+          ArgumentMapping mapping = new ArgumentMapping(partiallyGroundedOperator, condition);
+          List<List<Argument>> args = possibleArguments.get(oIdx).getPossibleArguments(mapping);
           ArgumentCombinationUtils.Iterator argumentIterator = new ArgumentCombinationUtils.Iterator(args);
-          argumentIterator.forEachRemaining(assignment -> {
-            Condition groundedCond = liftedCondition.getConditionBoundToArguments(refArgs, assignment);
-            addParameterImpliesEffect(partiallyGroundedOperator, groundedCond, mapping);
+          argumentIterator.forEachRemaining(groundedArgs -> {
+            Condition groundedCondition = condition.getConditionBoundToArguments(mapping.getRefArgs(), groundedArgs);
+            ArgumentAssignment assignment = new ArgumentAssignment(mapping, groundedCondition.getArguments());
+            addParameterImpliesCondition(assignment, true);
+            operatorLookup.addAssignment(assignment, true);
           });
         }
-        return c;
-      }, AbstractCondition.RECURSE_HEAD);
+      }
     }
   }
 
@@ -372,49 +426,23 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   }
 
-  public void applyToEach(int oIdx, AbstractCondition condition, BiConsumer<Condition, ArgumentAssignment> function) {
-    Operator operator = partiallyGroundedOperators.get(oIdx);
-    condition.traverse(c -> {
-      if (c.getConditionType() == ConditionType.atomic) {
-        Condition liftedCondition = (Condition) c;
-        ArgumentMapping mapping = new ArgumentMapping(operator, liftedCondition);
-        List<List<Argument>> args = new ArrayList<>();
-        List<Argument> refArgs = new ArrayList<>();
-        for (int i = 0; i < mapping.size(); i++) {
-          refArgs.add(liftedCondition.getArguments().get(mapping.getConditionPos(i)));
-          args.add(possibleArguments.get(oIdx).getPossibleArguments(mapping.getOperatorPos(i)));
-        }
-        ArgumentCombinationUtils.Iterator argumentIterator = new ArgumentCombinationUtils.Iterator(args);
-        argumentIterator.forEachRemaining(argList -> {
-          Condition groundedCondition = liftedCondition.getConditionBoundToArguments(refArgs, argList);
-          ArgumentAssignment assignment = new ArgumentAssignment(mapping, groundedCondition.getArguments());
-          function.accept(groundedCondition, assignment);
-        });
-      }
-      return c;
-    }, AbstractCondition.RECURSE_HEAD);
-  }
-
   public void interference() {
-    for (int oIdx = 0; oIdx < partiallyGroundedOperators.size(); oIdx++) {
-      int oIdxCopy = oIdx;
-      Operator operator = partiallyGroundedOperators.get(oIdx);
-      applyToEach(oIdx, operator.getPrecondition(), (precondition, assignment) -> {
-        if (!conditions.contains(precondition)) {
-          return;
+    for (Condition condition : conditions) {
+      for (ArgumentAssignment preconditionAssignment : operatorLookup.getAssignments(condition, condition.isNegated(),
+          false)) {
+        for (ArgumentAssignment effectAssignment : operatorLookup.getAssignments(condition, !condition.isNegated(),
+            true)) {
+          // TODO
         }
-        for (int otherOIdx = oIdxCopy + 1; otherOIdx < partiallyGroundedOperators.size(); otherOIdx++) {
-          Operator otherOperator = partiallyGroundedOperators.get(otherOIdx);
-          applyToEach(otherOIdx, otherOperator.getEffect(), (effect, otherAssignment) -> {
-            if (precondition.withoutNegation().equals(effect.withoutNegation())
-                && precondition.isNegated() != effect.isNegated()) {
-              forbidParameters(assignment, otherAssignment);
-            }
-          });
-        }
-      });
+      }
     }
   }
+
+  // if(precondition.withoutNegation().equals(effect.withoutNegation())&&precondition.isNegated()!=effect.isNegated())
+
+  // {
+  // forbidParameters(assignment, otherAssignment);
+  // }
 
   @Override
   public ActionPlan plan(PlanningProblem problem) {
@@ -428,7 +456,6 @@ public class LiftedSatPlanner extends LiftedPlanner {
     Set<Condition> conditionSet = new HashSet<>();
     // Setup the relevant operators for lookup
     for (Operator o : partiallyGroundedOperators) {
-      // eligibleArgumentCombinations.add(new ArrayList<>());
       possibleArguments.add(new OperatorParameterList(o));
     }
     // Iterate over all operators to collect parameter information and conditions
@@ -437,29 +464,15 @@ public class LiftedSatPlanner extends LiftedPlanner {
       int idx = partiallyGroundedOperatorLookup.get(op);
       possibleArguments.get(idx).addOperator(groundedOperator);
       {
-        Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(groundedOperator.getPrecondition());
-        if (!split.getRight().getConditions().isEmpty()) {
-          Logger.log(Logger.WARN, "Operator " + groundedOperator.getName() + " has complex preconditions");
-        }
-        for (AbstractCondition c : split.getLeft().getConditions()) {
-          if (c.getConditionType() != ConditionType.atomic) {
-            Logger.log(Logger.WARN, "Conditions are expected to be atomic");
-          }
-          conditionSet.add((Condition) c);
-          //
+        List<Condition> conditions = getConditionList(groundedOperator.getPrecondition());
+        for (Condition condition : conditions) {
+          conditionSet.add(condition.withoutNegation());
         }
       }
       {
-        Pair<ConditionSet, ConditionSet> split = grounder.splitCondition(groundedOperator.getEffect());
-        if (!split.getRight().getConditions().isEmpty()) {
-          Logger.log(Logger.WARN, "Operator " + groundedOperator.getName() + " has complex effect");
-        }
-        for (AbstractCondition c : split.getLeft().getConditions()) {
-          if (c.getConditionType() != ConditionType.atomic) {
-            Logger.log(Logger.WARN, "Conditions are expected to be atomic");
-          }
-          conditionSet.add((Condition) c);
-          //
+        List<Condition> conditions = getConditionList(groundedOperator.getEffect());
+        for (Condition condition : conditions) {
+          conditionSet.add(condition.withoutNegation());
         }
       }
     }
@@ -468,7 +481,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     encoding = new SymbolicReachabilityFormula();
     encoding.universalClauses = new SatFormula(numVars);
     encoding.transitionClauses = new SatFormula(numVars);
-    encoding.universalClauses.addClause(new int[] { 1 });
+    encoding.universalClauses.addClause(new int[] { SAT });
     atMostOneParameter();
     parametersImplyConditions();
     interference();
@@ -480,6 +493,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
   private Set<Condition> initialState;
   private PlanningGraphGrounder grounder;
   private List<Integer> partiallyGroundedOperatorLookup;
+  private OperatorLookup operatorLookup;
 
   private SymbolicReachabilityFormula encoding;
   // private List<List<List<Argument>>> eligibleArgumentCombinations;
