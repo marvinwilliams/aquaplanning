@@ -178,8 +178,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
     private List<Argument> arguments;
   }
 
-  class OperatorLookup {
-    public OperatorLookup() {
+  class ConditionSupport {
+    public ConditionSupport() {
       posPreconditions = new HashMap<>();
       negPreconditions = new HashMap<>();
       posEffects = new HashMap<>();
@@ -225,7 +225,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
   public List<Boolean> computeGroundArguments(Operator operator, OperatorParameterList args) {
     List<Boolean> result = new ArrayList<>();
     for (int i = 0; i < operator.getArguments().size(); i++) {
-      result.add(false);
+      result.add(true);
     }
     return result;
   }
@@ -289,7 +289,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
   public void addParameterImpliesCondition(ArgumentAssignment assignment, Condition condition, boolean isEffect) {
     List<Integer> clause = implyCondition(assignment);
     clause.add(getConditionSatVar(condition, !isEffect));
-    System.out.println(clause);
+    // System.out.println(clause);
     if (isEffect) {
       encoding.transitionClauses.addClause(clause.stream().mapToInt(x -> x).toArray());
     } else {
@@ -299,7 +299,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   public void atMostOneParameter() {
     for (int oIdx = 0; oIdx < partiallyGroundedOperators.size(); oIdx++) {
-      System.out.println("Operator " + partiallyGroundedOperators.get(oIdx).getName());
+      // System.out.println("Operator " + partiallyGroundedOperators.get(oIdx).getName());
       for (int pIdx = 0; pIdx < possibleArguments.get(oIdx).numFreeParameters(); pIdx++) {
         {
           // Operator -> Parameter
@@ -310,8 +310,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
             clause[counter++] = getParameterSatVar(oIdx, pIdx, aIdx);
           }
           encoding.universalClauses.addClause(clause);
-          System.out.println("Operator -> parameter");
-          System.out.println(clause);
+          // System.out.println("Operator -> parameter");
+          // System.out.println(Arrays.toString(clause));
         }
         {
           // Parameter -> Operator
@@ -320,8 +320,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
             clause[0] = -getParameterSatVar(oIdx, pIdx, aIdx);
             clause[1] = operatorSatVars.get(oIdx);
             encoding.universalClauses.addClause(clause);
-            System.out.println("Parameter -> Operator");
-            System.out.println(clause);
+            // System.out.println("Parameter -> Operator");
+            // System.out.println(Arrays.toString(clause));
           }
         }
         // AMO Parameter
@@ -332,14 +332,14 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   public void parametersImplyConditions() {
-    operatorLookup = new OperatorLookup();
+    conditionSupport = new ConditionSupport();
     for (int oIdx = 0; oIdx < partiallyGroundedOperators.size(); oIdx++) {
       Operator partiallyGroundedOperator = partiallyGroundedOperators.get(oIdx);
-      System.out.println("Operator " + partiallyGroundedOperator.getName());
+      // System.out.println("Operator " + partiallyGroundedOperator.getName());
       {
         List<Condition> preconditions = getConditionList(partiallyGroundedOperator.getPrecondition());
         for (Condition condition : preconditions) {
-          System.out.println(condition);
+          // System.out.println(condition);
           ArgumentMapping mapping = new ArgumentMapping(partiallyGroundedOperator, condition);
           List<List<Argument>> args = possibleArguments.get(oIdx).getPossibleArguments(mapping);
           ArgumentCombinationUtils.Iterator argumentIterator = new ArgumentCombinationUtils.Iterator(args);
@@ -348,7 +348,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
             ArgumentAssignment assignment = new ArgumentAssignment(mapping, groundedCondition.getArguments());
             addParameterImpliesCondition(assignment, groundedCondition, false);
             if (conditions.contains(groundedCondition.withoutNegation())) {
-              operatorLookup.addAssignment(assignment, groundedCondition.isNegated(), false);
+              conditionSupport.addAssignment(assignment, groundedCondition.isNegated(), false);
             }
           });
         }
@@ -356,7 +356,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       {
         List<Condition> effects = getConditionList(partiallyGroundedOperator.getEffect());
         for (Condition condition : effects) {
-          System.out.println(condition);
+          // System.out.println(condition);
           ArgumentMapping mapping = new ArgumentMapping(partiallyGroundedOperator, condition);
           List<List<Argument>> args = possibleArguments.get(oIdx).getPossibleArguments(mapping);
           ArgumentCombinationUtils.Iterator argumentIterator = new ArgumentCombinationUtils.Iterator(args);
@@ -365,7 +365,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
             ArgumentAssignment assignment = new ArgumentAssignment(mapping, groundedCondition.getArguments());
             addParameterImpliesCondition(assignment, groundedCondition, true);
             if (conditions.contains(groundedCondition.withoutNegation())) {
-              operatorLookup.addAssignment(assignment, groundedCondition.isNegated(), true);
+              conditionSupport.addAssignment(assignment, groundedCondition.isNegated(), true);
             }
           });
         }
@@ -375,8 +375,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   public void interference() {
     for (Condition condition : conditions) {
-      for (ArgumentAssignment preconditionAssignment : operatorLookup.getAssignments(condition, false, false)) {
-        for (ArgumentAssignment effectAssignment : operatorLookup.getAssignments(condition, true, true)) {
+      for (ArgumentAssignment preconditionAssignment : conditionSupport.getAssignments(condition, false, false)) {
+        for (ArgumentAssignment effectAssignment : conditionSupport.getAssignments(condition, true, true)) {
           if (preconditionAssignment.getMapping().getOperatorIndex() == effectAssignment.getMapping()
               .getOperatorIndex()) {
             continue;
@@ -384,8 +384,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
           forbidParameters(preconditionAssignment, effectAssignment);
         }
       }
-      for (ArgumentAssignment preconditionAssignment : operatorLookup.getAssignments(condition, true, false)) {
-        for (ArgumentAssignment effectAssignment : operatorLookup.getAssignments(condition, false, true)) {
+      for (ArgumentAssignment preconditionAssignment : conditionSupport.getAssignments(condition, true, false)) {
+        for (ArgumentAssignment effectAssignment : conditionSupport.getAssignments(condition, false, true)) {
           if (preconditionAssignment.getMapping().getOperatorIndex() == effectAssignment.getMapping()
               .getOperatorIndex()) {
             continue;
@@ -408,7 +408,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       List<int[]> dnf = new ArrayList<>();
       dnf.add(new int[] { getConditionSatVar(condition, true) });
       dnf.add(new int[] { -getConditionSatVar(condition, false) });
-      List<ArgumentAssignment> assignmentList = operatorLookup.getAssignments(condition, false, true);
+      List<ArgumentAssignment> assignmentList = conditionSupport.getAssignments(condition, false, true);
       if (assignmentList.size() == 0) {
         Logger.log(Logger.WARN, "no assignment supports positive condition " + condition);
       }
@@ -416,11 +416,13 @@ public class LiftedSatPlanner extends LiftedPlanner {
         int operatorIndex = assignment.getMapping().getOperatorIndex();
         if (assignment.size() == 0) {
           dnf.add(new int[] { operatorSatVars.get(operatorIndex) });
-        } else if (assignment.size() == 1) {
-          dnf.add(new int[] { getParameterSatVar(operatorIndex, assignment.getMapping().getOperatorPos(0),
-              assignment.getArguments().get(0)) });
         } else {
-          Logger.log(Logger.WARN, "Assignment has more than one free parameter");
+          int[] clause = new int[assignment.size()];
+          for (int i = 0; i < assignment.size(); i++) {
+            clause[i] = getParameterSatVar(operatorIndex, assignment.getMapping().getOperatorPos(i),
+                assignment.getArguments().get(i));
+          }
+          dnf.add(clause);
         }
       }
       encoding.transitionClauses.addDNF(dnf);
@@ -429,7 +431,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       List<int[]> dnf = new ArrayList<>();
       dnf.add(new int[] { -getConditionSatVar(condition, true) });
       dnf.add(new int[] { getConditionSatVar(condition, false) });
-      List<ArgumentAssignment> assignmentList = operatorLookup.getAssignments(condition, true, true);
+      List<ArgumentAssignment> assignmentList = conditionSupport.getAssignments(condition, true, true);
       if (assignmentList.size() == 0) {
         Logger.log(Logger.WARN, "no assignment supports negative condition " + condition);
       }
@@ -437,11 +439,13 @@ public class LiftedSatPlanner extends LiftedPlanner {
         int operatorIndex = assignment.getMapping().getOperatorIndex();
         if (assignment.size() == 0) {
           dnf.add(new int[] { operatorSatVars.get(operatorIndex) });
-        } else if (assignment.size() == 1) {
-          dnf.add(new int[] { getParameterSatVar(operatorIndex, assignment.getMapping().getOperatorPos(0),
-              assignment.getArguments().get(0)) });
         } else {
-          Logger.log(Logger.WARN, "Assignment has more than one free parameter");
+          int[] clause = new int[assignment.size()];
+          for (int i = 0; i < assignment.size(); i++) {
+            clause[i] = getParameterSatVar(operatorIndex, assignment.getMapping().getOperatorPos(i),
+                assignment.getArguments().get(i));
+          }
+          dnf.add(clause);
         }
       }
       encoding.transitionClauses.addDNF(dnf);
@@ -487,13 +491,13 @@ public class LiftedSatPlanner extends LiftedPlanner {
     for (int i = 0; i < conditions.size(); i++) {
       conditionSatVars.add(satVar++);
     }
-    System.out.println("Operator sat vars");
+    // System.out.println("Operator sat vars");
     for (int i = 0; i < partiallyGroundedOperators.size(); i++) {
-      System.out.println("Operator " + partiallyGroundedOperators.get(i).getName() + ": " + operatorSatVars.get(i));
-      System.out.println(parameterSatVars.get(i));
+      // System.out.println("Operator " + partiallyGroundedOperators.get(i).getName() + ": " + operatorSatVars.get(i));
+      // System.out.println(parameterSatVars.get(i));
     }
-    System.out.println("Condition sat vars");
-    System.out.println(conditionSatVars);
+    // System.out.println("Condition sat vars");
+    // System.out.println(conditionSatVars);
     numVars = satVar - 1;
     encoding = new SymbolicReachabilityFormula();
     encoding.universalClauses = new SatFormula(numVars);
@@ -547,10 +551,11 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   @Override
   public OperatorPlan plan(PlanningProblem problem) {
+    this.problem = problem;
     initialState = new HashSet<>();
     initialState.addAll(problem.getInitialState());
-    System.out.println("Initial problem");
-    System.out.println(problem);
+    // System.out.println("Initial problem");
+    // System.out.println(problem);
     grounder = new PlanningGraphGrounder(config);
     GroundPlanningProblem groundedProblem = grounder.ground(problem);
     goal = new ArrayList<>();
@@ -583,11 +588,11 @@ public class LiftedSatPlanner extends LiftedPlanner {
         }
       }
     }
-    System.out.println("Partially grounded operators");
-    System.out.println(partiallyGroundedOperators);
+    // System.out.println("Partially grounded operators");
+    // System.out.println(partiallyGroundedOperators);
     conditions = new ArrayList<>(conditionSet);
-    System.out.println("All conditions");
-    System.out.println(conditions);
+    // System.out.println("All conditions");
+    // System.out.println(conditions);
 
     initializeSatIds();
     encoding = new SymbolicReachabilityFormula();
@@ -595,16 +600,16 @@ public class LiftedSatPlanner extends LiftedPlanner {
     encoding.transitionClauses = new SatFormula(numVars);
     encoding.universalClauses.addClause(new int[] { SAT });
     atMostOneParameter();
-    // parametersImplyConditions();
-    // interference();
-    // frameAxioms();
+    parametersImplyConditions();
+    interference();
+    frameAxioms();
     initialState();
     goal();
     SymbolicReachabilitySolver solver = new SymbolicReachabilitySolver(new IpasirSatSolver());
     List<int[]> model = solver.solve(encoding);
-    System.out.println(model);
+    // System.out.println(model);
     OperatorPlan plan = extractPlan(model);
-    System.out.println("Done planning");
+    // System.out.println("Done planning");
     return plan;
   }
 
@@ -645,7 +650,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
   private List<Condition> goal;
   private PlanningGraphGrounder grounder;
   private List<Integer> partiallyGroundedOperatorLookup;
-  private OperatorLookup operatorLookup;
+  private ConditionSupport conditionSupport;
 
   private SymbolicReachabilityFormula encoding;
   // private List<List<List<Argument>>> eligibleArgumentCombinations;
