@@ -1,6 +1,7 @@
 package edu.kit.aquaplanning.planning.sat;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -101,6 +102,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   class OperatorParameterList {
     public OperatorParameterList(Operator o) {
+      numOperators = 0;
       freeParameters = new ArrayList<>();
       for (int i = 0; i < o.getArguments().size(); i++) {
         if (!o.getArguments().get(i).isConstant()) {
@@ -113,6 +115,10 @@ public class LiftedSatPlanner extends LiftedPlanner {
       }
     }
 
+    public int getNumOperators() {
+      return numOperators;
+    }
+
     public void addOperator(Operator o) {
       for (int i = 0; i < freeParameters.size(); i++) {
         Argument arg = o.getArguments().get(freeParameters.get(i));
@@ -120,6 +126,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
           argumentList.get(i).add(arg);
         }
       }
+      numOperators += 1;
     }
 
     public int numFreeParameters() {
@@ -145,6 +152,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
     List<List<Argument>> argumentList;
     List<Integer> freeParameters;
+    private int numOperators;
   }
 
   class ArgumentAssignment {
@@ -222,12 +230,81 @@ public class LiftedSatPlanner extends LiftedPlanner {
     Map<Condition, List<ArgumentAssignment>> negEffects;
   }
 
-  public List<Boolean> computeGroundArguments(Operator operator, OperatorParameterList args) {
-    List<Boolean> result = new ArrayList<>();
-    for (int i = 0; i < operator.getArguments().size(); i++) {
-      result.add(true);
+  public boolean[] computeGroundArguments(Operator operator, OperatorParameterList possibleArgs) {
+    boolean bestGrounding[] = new boolean[possibleArgs.numFreeParameters()];
+    if (possibleArgs.getNumOperators() == 0) {
+      return bestGrounding;
     }
-    return result;
+    // System.out.println("Compute grounding for " + operator.getName());
+    List<List<Condition>> dependentConditions = new ArrayList<>();
+    while (dependentConditions.size() < possibleArgs.numFreeParameters()) {
+      dependentConditions.add(new ArrayList<>());
+    }
+    Map<Condition, Integer> freeCounter = new HashMap<>();
+    for (Condition condition : getConditionList(operator.getEffect())) {
+      int counter = 0;
+      for (Argument arg : condition.getArguments()) {
+        if (!arg.isConstant()) {
+          counter++;
+          for (int i = 0; i < possibleArgs.numFreeParameters(); i++) {
+            if (arg.equals(operator.getArguments().get(possibleArgs.getFreeParameter(i)))) {
+              dependentConditions.get(i).add(condition);
+              break;
+            }
+          }
+        }
+      }
+      freeCounter.put(condition, counter);
+    }
+    boolean currentGrounding[] = new boolean[possibleArgs.numFreeParameters()];
+    int best = Integer.MAX_VALUE;
+    for (int i = 0; i <= possibleArgs.numFreeParameters(); i++) {
+      best = computeGrounding(possibleArgs, dependentConditions, freeCounter, i, best, bestGrounding, 0, 1,
+          currentGrounding);
+    }
+    return bestGrounding;
+  }
+
+  private int computeGrounding(OperatorParameterList possibleArgs, List<List<Condition>> dependentConditions,
+      Map<Condition, Integer> freeCounter, int maxGrounded, int currentBest, boolean[] bestGrounding, int currentPos,
+      int current, boolean[] currentGrounding) {
+    if (current >= currentBest) {
+      return currentBest;
+    }
+    if (maxGrounded == 0) {
+      boolean valid = true;
+      for (int free : freeCounter.values()) {
+        if (free > 1) {
+          valid = false;
+          break;
+        }
+      }
+      if (valid) {
+        System.arraycopy(currentGrounding, 0, bestGrounding, 0, currentGrounding.length);
+        currentBest = current;
+      }
+      return currentBest;
+    } else {
+      for (int pos = currentPos; pos <= possibleArgs.numFreeParameters() - maxGrounded; pos++) {
+        if (dependentConditions.get(pos).size() == 0) {
+          // Grounding this parameter has no effect
+          continue;
+        }
+        currentGrounding[pos] = true;
+        for (Condition condition : dependentConditions.get(pos)) {
+          freeCounter.put(condition, freeCounter.get(condition) - 1);
+        }
+        current *= possibleArgs.getPossibleArguments(pos).size();
+        currentBest = computeGrounding(possibleArgs, dependentConditions, freeCounter, maxGrounded - 1, currentBest,
+            bestGrounding, pos + 1, current, currentGrounding);
+        current /= possibleArgs.getPossibleArguments(pos).size();
+        for (Condition condition : dependentConditions.get(pos)) {
+          freeCounter.put(condition, freeCounter.get(condition) + 1);
+        }
+        currentGrounding[pos] = false;
+      }
+    }
+    return currentBest;
   }
 
   // parameterIndex is free index
@@ -260,9 +337,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     int cIdx = conditions.indexOf(condition.withoutNegation());
     if (cIdx == -1) {
       // If the condition is not known, it is either rigid true or false
-      if (condition.isNegated() && !initialState.contains(condition)) {
-        return SAT;
-      } else if (!condition.isNegated() && initialState.contains(condition)) {
+      if ((condition.isNegated() != initialState.contains(condition)) || (condition.getPredicate().getName().equals("=") && condition.getArguments().get(0).equals(condition.getArguments().get(1)))){
         return SAT;
       } else {
         return -SAT;
@@ -299,7 +374,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   public void atMostOneParameter() {
     for (int oIdx = 0; oIdx < partiallyGroundedOperators.size(); oIdx++) {
-      // System.out.println("Operator " + partiallyGroundedOperators.get(oIdx).getName());
+      // System.out.println("Operator " +
+      // partiallyGroundedOperators.get(oIdx).getName());
       for (int pIdx = 0; pIdx < possibleArguments.get(oIdx).numFreeParameters(); pIdx++) {
         {
           // Operator -> Parameter
@@ -417,6 +493,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
         if (assignment.size() == 0) {
           dnf.add(new int[] { operatorSatVars.get(operatorIndex) });
         } else {
+          if (assignment.size() > 1) {
+            Logger.log(Logger.WARN, "Grounding failed");
+          }
           int[] clause = new int[assignment.size()];
           for (int i = 0; i < assignment.size(); i++) {
             clause[i] = getParameterSatVar(operatorIndex, assignment.getMapping().getOperatorPos(i),
@@ -440,6 +519,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
         if (assignment.size() == 0) {
           dnf.add(new int[] { operatorSatVars.get(operatorIndex) });
         } else {
+          if (assignment.size() > 1) {
+            Logger.log(Logger.WARN, "Grounding failed");
+          }
           int[] clause = new int[assignment.size()];
           for (int i = 0; i < assignment.size(); i++) {
             clause[i] = getParameterSatVar(operatorIndex, assignment.getMapping().getOperatorPos(i),
@@ -492,10 +574,11 @@ public class LiftedSatPlanner extends LiftedPlanner {
       conditionSatVars.add(satVar++);
     }
     // System.out.println("Operator sat vars");
-    for (int i = 0; i < partiallyGroundedOperators.size(); i++) {
-      // System.out.println("Operator " + partiallyGroundedOperators.get(i).getName() + ": " + operatorSatVars.get(i));
+    // for (int i = 0; i < partiallyGroundedOperators.size(); i++) {
+      // System.out.println("Operator " + partiallyGroundedOperators.get(i).getName()
+      // + ": " + operatorSatVars.get(i));
       // System.out.println(parameterSatVars.get(i));
-    }
+    // }
     // System.out.println("Condition sat vars");
     // System.out.println(conditionSatVars);
     numVars = satVar - 1;
@@ -520,7 +603,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       operatorArgs.get(idx).addOperator(o);
     }
     // Get the list of grounded arguments
-    List<List<Boolean>> operatorArgumentsToGround = new ArrayList<>();
+    List<boolean[]> operatorArgumentsToGround = new ArrayList<>();
     for (Operator o : liftedOperators) {
       int idx = operatorIndex.get(o.getName());
       operatorArgumentsToGround.add(computeGroundArguments(o, operatorArgs.get(idx)));
@@ -532,11 +615,17 @@ public class LiftedSatPlanner extends LiftedPlanner {
       int idx = operatorIndex.get(o.getName());
       Operator liftedOperator = liftedOperators.get(idx);
       List<Argument> args = new ArrayList<>();
-      for (int i = 0; i < o.getArguments().size(); i++) {
-        if (operatorArgumentsToGround.get(idx).get(i)) {
-          args.add(o.getArguments().get(i));
-        } else {
+      int counter = 0;
+      for (int i = 0; i < liftedOperator.getArguments().size(); i++) {
+        if (liftedOperator.getArguments().get(i).isConstant()) {
           args.add(null);
+        } else {
+          if (operatorArgumentsToGround.get(idx)[counter]) {
+            args.add(o.getArguments().get(i));
+          } else {
+            args.add(null);
+          }
+          counter++;
         }
       }
       Operator partiallyGroundedOperator = liftedOperator.getOperatorWithGroundArguments(args);
@@ -554,15 +643,23 @@ public class LiftedSatPlanner extends LiftedPlanner {
     this.problem = problem;
     initialState = new HashSet<>();
     initialState.addAll(problem.getInitialState());
-    // System.out.println("Initial problem");
+    // System.out.println("Initial operators");
     // System.out.println(problem);
     grounder = new PlanningGraphGrounder(config);
     GroundPlanningProblem groundedProblem = grounder.ground(problem);
+    // System.out.println("Initial operators 2");
+    // System.out.println(problem);
+    // System.out.println("Initial grounded operators");
+    // System.out.println(grounder.getFilteredActions());
+    // System.out.println("Final state");
+    // System.out.println(grounder.getState());
     goal = new ArrayList<>();
     for (AbstractCondition abstractCondition : problem.getGoals()) {
       goal.addAll(getConditionList(abstractCondition));
     }
     setPartiallyGroundedOperators(problem.getOperators(), grounder.getFilteredActions());
+    // System.out.println("Partially grounded");
+    // System.out.println(partiallyGroundedOperators);
     // eligibleArgumentCombinations = new ArrayList<>();
     possibleArguments = new ArrayList<>();
     Set<Condition> conditionSet = new HashSet<>();
