@@ -1,7 +1,7 @@
 (define (domain ROVER)
 	(:requirements :strips :typing)
 	(:types rover waypoint store camera objective mode lander - object)
-	(:constants )
+	;(:constants )
 	(:predicates	(available ?x - rover)
   					(at ?x - rover ?p - waypoint)
   					(visible ?p1 - waypoint ?p2 - waypoint)

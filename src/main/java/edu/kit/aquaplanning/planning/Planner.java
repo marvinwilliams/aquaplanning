@@ -5,6 +5,7 @@ import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.ground.htn.HtnPlanningProblem;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
 import edu.kit.aquaplanning.planning.htn.TreeRexPlanner;
+import edu.kit.aquaplanning.planning.sat.FullyLiftedSatPlanner;
 import edu.kit.aquaplanning.planning.sat.HegemannsSatPlanner;
 import edu.kit.aquaplanning.planning.sat.LiftedSatPlanner;
 import edu.kit.aquaplanning.planning.sat.SimpleSatPlanner;
@@ -48,6 +49,8 @@ public abstract class Planner {
 			return new SequentialPortfolioPlanner(config);
         case liftedSat:
             return new LiftedSatPlanner(config);
+        case fLiftedSat:
+            return new FullyLiftedSatPlanner(config);
 		default:
 			return null;
 		}

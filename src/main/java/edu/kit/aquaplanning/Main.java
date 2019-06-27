@@ -22,7 +22,6 @@ public class Main {
 	 * errors which occur during parsing.
 	 */
 	public static Configuration parse(String[] args) {
-
 		Configuration config = new Configuration();
 		CommandLine cmd = new CommandLine(config);
 

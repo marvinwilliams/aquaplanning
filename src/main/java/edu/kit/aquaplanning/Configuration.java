@@ -91,7 +91,7 @@ public class Configuration {
 	 */
 
 	public enum PlannerType {
-		forwardSSS, satBased, hegemannSat, parallel, greedy, seqpfolio, liftedSat;
+		forwardSSS, satBased, hegemannSat, parallel, greedy, seqpfolio, liftedSat, fLiftedSat;
 	}
 
 	@Option(paramLabel = "plannerType", names = { "-p", "--planner" }, description = "Planner type to use: "
