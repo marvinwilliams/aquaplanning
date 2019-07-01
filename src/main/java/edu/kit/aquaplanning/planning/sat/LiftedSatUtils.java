@@ -79,10 +79,7 @@ public final class LiftedSatUtils {
     public ArgumentAssignment(Operator operator, Condition condition,
         List<Argument> conditionArguments) {
       super(operator, condition);
-      arguments = new ArrayList<>();
-      for (int i = 0; i < size(); i++) {
-        arguments.add(conditionArguments.get(i));
-      }
+      arguments = conditionArguments;
       groundedCondition = getCondition()
           .getConditionBoundToArguments(getRefArgs(), arguments);
     }

@@ -40,14 +40,12 @@ public class LiftedSatPlanner extends LiftedPlanner {
     public OperatorParameterList(Operator operator) {
       numOperators = 0;
       freeParameters = new ArrayList<>();
+      argumentList = new ArrayList<>();
       for (int i = 0; i < operator.getArguments().size(); i++) {
         if (!operator.getArguments().get(i).isConstant()) {
           freeParameters.add(i);
+          argumentList.add(new ArrayList<>());
         }
-      }
-      argumentList = new ArrayList<>();
-      while (argumentList.size() < freeParameters.size()) {
-        argumentList.add(new ArrayList<>());
       }
     }
 
@@ -95,39 +93,42 @@ public class LiftedSatPlanner extends LiftedPlanner {
   public boolean[] computeGroundArguments(Operator operator,
       OperatorParameterList possibleArgs) {
     boolean bestGrounding[] = new boolean[possibleArgs.numFreeParameters()];
-    if (possibleArgs.getNumOperators() == 0) {
-      return bestGrounding;
-    }
-    // System.out.println("Compute grounding for " + operator.getName());
-    List<List<Condition>> dependentConditions = new ArrayList<>();
-    while (dependentConditions.size() < possibleArgs.numFreeParameters()) {
-      dependentConditions.add(new ArrayList<>());
-    }
-    Map<Condition, Integer> freeCounter = new HashMap<>();
-    for (Condition condition : getConditionList(operator.getEffect())) {
-      int counter = 0;
-      for (Argument arg : condition.getArguments()) {
-        if (arg.isConstant()) {
-          continue;
-        }
-        for (int i = 0; i < possibleArgs.numFreeParameters(); i++) {
-          if (arg.equals(
-              operator.getArguments().get(possibleArgs.getFreeParameter(i)))) {
-            dependentConditions.get(i).add(condition);
-            break;
-          }
-        }
-        counter++;
-      }
-      freeCounter.put(condition, counter);
-    }
-    boolean currentGrounding[] = new boolean[possibleArgs.numFreeParameters()];
-    int best = Integer.MAX_VALUE;
-    for (int i = 0; i <= possibleArgs.numFreeParameters(); i++) {
-      best = computeGrounding(possibleArgs, dependentConditions, freeCounter, i,
-          best, bestGrounding, 0, 1, currentGrounding);
-    }
     return bestGrounding;
+    // if (possibleArgs.getNumOperators() == 0) {
+    // return bestGrounding;
+    // }
+    // // System.out.println("Compute grounding for " + operator.getName());
+    // List<List<Condition>> dependentConditions = new ArrayList<>();
+    // while (dependentConditions.size() < possibleArgs.numFreeParameters()) {
+    // dependentConditions.add(new ArrayList<>());
+    // }
+    // Map<Condition, Integer> freeCounter = new HashMap<>();
+    // for (Condition condition : getConditionList(operator.getEffect())) {
+    // int counter = 0;
+    // for (Argument arg : condition.getArguments()) {
+    // if (arg.isConstant()) {
+    // continue;
+    // }
+    // for (int i = 0; i < possibleArgs.numFreeParameters(); i++) {
+    // if (arg.equals(
+    // operator.getArguments().get(possibleArgs.getFreeParameter(i)))) {
+    // dependentConditions.get(i).add(condition);
+    // break;
+    // }
+    // }
+    // counter++;
+    // }
+    // freeCounter.put(condition, counter);
+    // }
+    // boolean currentGrounding[] = new
+    // boolean[possibleArgs.numFreeParameters()];
+    // int best = Integer.MAX_VALUE;
+    // for (int i = 0; i <= possibleArgs.numFreeParameters(); i++) {
+    // best = computeGrounding(possibleArgs, dependentConditions, freeCounter,
+    // i,
+    // best, bestGrounding, 0, 1, currentGrounding);
+    // }
+    // return bestGrounding;
   }
 
   private int computeGrounding(OperatorParameterList possibleArgs,
@@ -217,9 +218,10 @@ public class LiftedSatPlanner extends LiftedPlanner {
     int cIdx = conditions.indexOf(condition);
     if (cIdx == -1) {
       // If the condition is not known, it is either rigid true or false
-      if ((isNegated != initialState.contains(condition))
-          || (condition.getPredicate().getName().equals("=") && condition
-              .getArguments().get(0).equals(condition.getArguments().get(1)))) {
+      if (isNegated != (initialState.contains(condition)
+          || (condition.getPredicate().getName().equals("=")
+              && (condition.getArguments().get(0)
+                  .equals(condition.getArguments().get(1)))))) {
         return SAT;
       } else {
         return -SAT;
@@ -244,7 +246,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     return conditionList;
   }
 
-  public void addParameterImpliesCondition(ArgumentAssignment assignment,
+  public void parameterImpliesCondition(ArgumentAssignment assignment,
       boolean isNegated, boolean isEffect) {
     Clause clause = implyCondition(assignment);
 
@@ -317,11 +319,12 @@ public class LiftedSatPlanner extends LiftedPlanner {
         List<List<Argument>> args = possibleArguments.get(oIdx)
             .getPossibleArguments(mapping);
         Iterator argumentIterator = new Iterator(args);
+        // will be called once with empty args
         while (argumentIterator.hasNext()) {
           List<Argument> groundedArgs = argumentIterator.next();
           ArgumentAssignment assignment = new ArgumentAssignment(operator,
               condition, groundedArgs);
-          addParameterImpliesCondition(assignment, condition.isNegated(),
+          parameterImpliesCondition(assignment, condition.isNegated(),
               asEffect);
           picClauses++;
           if (conditions.contains(assignment.getGroundedCondition())) {
@@ -365,19 +368,22 @@ public class LiftedSatPlanner extends LiftedPlanner {
       dnf.add(new int[] { getConditionSatVar(condition, !isNegated, false) });
       List<ArgumentAssignment> assignmentList = conditionSupport
           .getAssignments(condition, isNegated, true);
+      // System.out.println("Condition " + condition + " " + isNegated);
       for (ArgumentAssignment assignment : assignmentList) {
+        // System.out.println(
+        // assignment.getOperator() + " with " + assignment.getArguments());
         int operatorIndex = operatorIndexMap.get(assignment.getOperator());
+        Clause clause = new Clause();
         if (assignment.size() == 0) {
-          dnf.add(new int[] { operatorSatVars.get(operatorIndex) });
+          clause.add(operatorSatVars.get(operatorIndex));
         } else {
-          Clause clause = new Clause();
           for (int i = 0; i < assignment.size(); i++) {
             clause.add(
                 getParameterSatVar(operatorIndex, assignment.getOperatorPos(i),
                     assignment.getArguments().get(i)));
           }
-          dnf.add(clause.toArray());
         }
+        dnf.add(clause.toArray());
       }
       encoding.transitionClauses.addDNF(dnf);
       int dnfClauses = 1;
@@ -412,7 +418,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   public void initializeSatIds() {
     // SAT variable in number 1
-    int satVar = 1;
+    int satVar = 2;
     operatorSatVars = new ArrayList<>();
     parameterSatVars = new ArrayList<>();
     conditionSatVars = new ArrayList<>();
@@ -501,8 +507,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       if (lookupIdx == -1) {
         lookupIdx = operators.size();
         operators.add(partiallyGroundedOperator);
-        operatorIndexMap.put(partiallyGroundedOperator,
-            operatorIndexMap.size());
+        operatorIndexMap.put(partiallyGroundedOperator, lookupIdx);
       }
       operatorLookup.add(lookupIdx);
     }
@@ -517,7 +522,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     // System.out.println("Initial operators");
     // System.out.println(problem);
     grounder = new PlanningGraphGrounder(config);
-    GroundPlanningProblem groundedProblem = grounder.ground(problem);
+    grounder.ground(problem);
     Logger.log(Logger.INFO, "TIME_GROUND");
     // System.out.println("Initial operators 2");
     // System.out.println(problem);
@@ -566,7 +571,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
     conditions = new ArrayList<>(conditionSet);
     // System.out.println("All conditions");
     // System.out.println(conditions);
-
+    System.out.println("Init: " + initialState);
+    System.out.println("Goal: " + initialState);
     initializeSatIds();
     amopClauses = 0;
     picClauses = 0;

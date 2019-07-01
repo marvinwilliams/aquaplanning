@@ -77,6 +77,14 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
   private int getConditionSatVar(Condition condition, boolean isNegated,
       boolean thisStep) {
     int cIdx = conditions.indexOf(condition);
+    if (condition.getPredicate().getName().equals("=")) {
+      if (isNegated != condition.getArguments().get(0)
+          .equals(condition.getArguments().get(1))) {
+        return SAT;
+      } else {
+        return -SAT;
+      }
+    }
     return (isNegated ? -1 : 1)
         * (conditionSatVars.get(cIdx) + (thisStep ? 0 : numVars));
   }
@@ -180,10 +188,12 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
               condition, groundedArgs);
           parameterImpliesCondition(assignment, condition.isNegated(),
               asEffect);
-          conditionSupport.addAssignment(assignment, condition.isNegated(),
-              asEffect);
-          System.out.println("Added " + assignment.getGroundedCondition() + " "
-              + condition.isNegated() + " " + asEffect);
+          if (!condition.getPredicate().getName().equals("=")) {
+            conditionSupport.addAssignment(assignment, condition.isNegated(),
+                asEffect);
+            System.out.println("Added " + assignment.getGroundedCondition()
+                + " " + condition.isNegated() + " " + asEffect);
+          }
         }
       }
     }
