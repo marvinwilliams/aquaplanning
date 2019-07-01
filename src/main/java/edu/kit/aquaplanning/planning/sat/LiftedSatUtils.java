@@ -13,7 +13,7 @@ public final class LiftedSatUtils {
   private LiftedSatUtils() {
   }
 
-  static final class ArgumentMapping {
+  public static class ArgumentMapping {
     public ArgumentMapping(Operator operator, Condition condition) {
       this.operator = operator;
       this.condition = condition.withoutNegation();
@@ -21,20 +21,25 @@ public final class LiftedSatUtils {
       conditionPos = new ArrayList<>();
       operatorPos = new ArrayList<>();
       refArgs = new ArrayList<>();
-      int counter = 0;
-      for (int i = 0; i < operator.getArguments().size(); i++) {
-        Argument arg = operator.getArguments().get(i);
+      for (int i = 0; i < condition.getNumArgs(); i++) {
+        Argument arg = condition.getArguments().get(i);
         if (arg.isConstant()) {
           continue;
         }
-        int aIdx = condition.getArguments().indexOf(arg);
-        if (aIdx >= 0) {
-          conditionPos.add(aIdx);
-          operatorPos.add(counter);
-          refArgs.add(arg);
-          size++;
+        int counter = 0;
+        for (Argument oArg : operator.getArguments()) {
+          if (oArg.isConstant()) {
+            continue;
+          }
+          if (oArg.equals(arg)) {
+            operatorPos.add(counter);
+            conditionPos.add(i);
+            refArgs.add(arg);
+            size++;
+            break;
+          }
+          counter++;
         }
-        counter++;
       }
     }
 
@@ -44,6 +49,10 @@ public final class LiftedSatUtils {
 
     public Operator getOperator() {
       return operator;
+    }
+
+    public Condition getCondition() {
+      return condition;
     }
 
     public int getConditionPos(int i) {
@@ -58,10 +67,6 @@ public final class LiftedSatUtils {
       return refArgs;
     }
 
-    public Condition getCondition() {
-      return condition;
-    }
-
     private int size;
     private List<Argument> refArgs;
     private List<Integer> conditionPos;
@@ -70,38 +75,31 @@ public final class LiftedSatUtils {
     private Operator operator;
   }
 
-  static final class ArgumentAssignment {
-    public ArgumentAssignment(ArgumentMapping mapping, List<Argument> conditionArguments) {
-      this.mapping = mapping;
+  public static final class ArgumentAssignment extends ArgumentMapping {
+    public ArgumentAssignment(Operator operator, Condition condition,
+        List<Argument> conditionArguments) {
+      super(operator, condition);
       arguments = new ArrayList<>();
-      for (int i = 0; i < mapping.size(); i++) {
-        arguments.add(conditionArguments.get(mapping.getConditionPos(i)));
+      for (int i = 0; i < size(); i++) {
+        arguments.add(conditionArguments.get(i));
       }
-      condition = mapping.getCondition().getConditionBoundToArguments(mapping.getRefArgs(), arguments);
+      groundedCondition = getCondition()
+          .getConditionBoundToArguments(getRefArgs(), arguments);
     }
 
-    public int size() {
-      return arguments.size();
-    }
-
-    public ArgumentMapping getMapping() {
-      return mapping;
-    }
-
-    public Condition getCondition() {
-      return condition;
+    public Condition getGroundedCondition() {
+      return groundedCondition;
     }
 
     List<Argument> getArguments() {
       return arguments;
     }
 
-    private Condition condition;
-    private ArgumentMapping mapping;
+    private Condition groundedCondition;
     private List<Argument> arguments;
   }
 
-  static final class ConditionSupport {
+  public static final class ConditionSupport {
     public ConditionSupport() {
       posPreconditions = new HashMap<>();
       negPreconditions = new HashMap<>();
@@ -109,8 +107,9 @@ public final class LiftedSatUtils {
       negEffects = new HashMap<>();
     }
 
-    public void addAssignment(ArgumentAssignment assignment, boolean isNegated, boolean isEffect) {
-      Condition condition = assignment.getCondition();
+    public void addAssignment(ArgumentAssignment assignment, boolean isNegated,
+        boolean isEffect) {
+      Condition condition = assignment.getGroundedCondition();
       if (isEffect) {
         if (isNegated) {
           negEffects.putIfAbsent(condition, new ArrayList<>());
@@ -130,18 +129,42 @@ public final class LiftedSatUtils {
       }
     }
 
-    public List<ArgumentAssignment> getAssignments(Condition condition, boolean isNegated, boolean isEffect) {
-      Condition c = condition.withoutNegation();
+    public List<ArgumentAssignment> getAssignments(Condition condition,
+        boolean isNegated, boolean isEffect) {
       return isNegated
-          ? (isEffect ? negEffects.getOrDefault(c, new ArrayList<>())
-              : negPreconditions.getOrDefault(c, new ArrayList<>()))
-          : (isEffect ? posEffects.getOrDefault(c, new ArrayList<>())
-              : posPreconditions.getOrDefault(c, new ArrayList<>()));
+          ? (isEffect ? negEffects.getOrDefault(condition, new ArrayList<>())
+              : negPreconditions.getOrDefault(condition, new ArrayList<>()))
+          : (isEffect ? posEffects.getOrDefault(condition, new ArrayList<>())
+              : posPreconditions.getOrDefault(condition, new ArrayList<>()));
     }
 
-    Map<Condition, List<ArgumentAssignment>> posPreconditions;
-    Map<Condition, List<ArgumentAssignment>> negPreconditions;
-    Map<Condition, List<ArgumentAssignment>> posEffects;
-    Map<Condition, List<ArgumentAssignment>> negEffects;
+    private Map<Condition, List<ArgumentAssignment>> posPreconditions;
+    private Map<Condition, List<ArgumentAssignment>> negPreconditions;
+    private Map<Condition, List<ArgumentAssignment>> posEffects;
+    private Map<Condition, List<ArgumentAssignment>> negEffects;
+  }
+
+  public static final class Clause {
+    public Clause() {
+      varList = new ArrayList<>();
+    }
+
+    public void add(int satVar) {
+      varList.add(satVar);
+    }
+
+    public void add(Clause clause) {
+      varList.addAll(clause.varList);
+    }
+
+    public void add(List<Integer> satVars) {
+      varList.addAll(satVars);
+    }
+
+    public int[] toArray() {
+      return varList.stream().mapToInt(x -> x).toArray();
+    }
+
+    private List<Integer> varList;
   }
 }
