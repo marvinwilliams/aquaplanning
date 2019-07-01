@@ -76,7 +76,6 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
 
   private int getConditionSatVar(Condition condition, boolean isNegated,
       boolean thisStep) {
-    int cIdx = conditions.indexOf(condition);
     if (condition.getPredicate().getName().equals("=")) {
       if (isNegated != condition.getArguments().get(0)
           .equals(condition.getArguments().get(1))) {
@@ -85,6 +84,7 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
         return -SAT;
       }
     }
+    int cIdx = conditions.indexOf(condition);
     return (isNegated ? -1 : 1)
         * (conditionSatVars.get(cIdx) + (thisStep ? 0 : numVars));
   }
@@ -348,6 +348,9 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
     conditions = new ArrayList<>();
     Map<Type, List<Argument>> constantsOfType = new HashMap<>();
     for (Predicate p : problem.getPredicates().values()) {
+      if (p.getName().equals("=")) {
+        continue;
+      }
       List<List<Argument>> args = new ArrayList<>();
       for (Type t : p.getArgumentTypes()) {
         if (!constantsOfType.containsKey(t)) {
@@ -462,6 +465,7 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
           }
           Operator groundedOperator = operator
               .getOperatorWithGroundArguments(args);
+          System.out.println("Plan " + groundedOperator);
           plan.appendAtBack(groundedOperator);
         }
       }
