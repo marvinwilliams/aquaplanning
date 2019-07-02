@@ -171,10 +171,10 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
       } else {
         conditionList = getConditionList(operator.getPrecondition());
       }
-      System.out.println("Operator " + operator);
+      // System.out.println("Operator " + operator);
       for (Condition condition : conditionList) {
-        System.out
-            .println("Condition " + condition + " is " + condition.isNegated());
+        // System.out
+            // .println("Condition " + condition + " is " + condition.isNegated());
         // System.out.println(condition);
         ArgumentMapping mapping = new ArgumentMapping(operator, condition);
         List<List<Argument>> args = new ArrayList<>();
@@ -191,8 +191,8 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
           if (!condition.getPredicate().getName().equals("=")) {
             conditionSupport.addAssignment(assignment, condition.isNegated(),
                 asEffect);
-            System.out.println("Added " + assignment.getGroundedCondition()
-                + " " + condition.isNegated() + " " + asEffect);
+            // System.out.println("Added " + assignment.getGroundedCondition()
+                // + " " + condition.isNegated() + " " + asEffect);
           }
         }
       }
@@ -225,15 +225,15 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
 
   public void frameAxioms(boolean isNegated) {
     for (Condition condition : conditions) {
-      System.out.println("Condition " + condition + " " + isNegated);
+      // System.out.println("Condition " + condition + " " + isNegated);
       List<int[]> dnf = new ArrayList<>();
       dnf.add(new int[] { getConditionSatVar(condition, isNegated, true) });
       dnf.add(new int[] { getConditionSatVar(condition, !isNegated, false) });
       List<ArgumentAssignment> assignmentList = conditionSupport
           .getAssignments(condition, isNegated, true);
       for (ArgumentAssignment assignment : assignmentList) {
-        System.out.println("Support from operator " + assignment.getOperator()
-            + " with arguments " + assignment.getArguments());
+        // System.out.println("Support from operator " + assignment.getOperator()
+            // + " with arguments " + assignment.getArguments());
         int operatorIndex = operatorIndexMap.get(assignment.getOperator());
         if (assignment.size() == 0) {
           dnf.add(new int[] { operatorSatVars.get(operatorIndex) });
@@ -319,7 +319,7 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
     Logger.log(Logger.INFO, "TIME_INIT");
     new Preprocessor(config).preprocess(problem);
     this.problem = problem;
-    System.out.println(problem);
+    // System.out.println(problem);
     grounder = new PlanningGraphGrounder(config);
     initialState = new HashSet<>();
     initialState.addAll(problem.getInitialState());
@@ -341,8 +341,8 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
     for (AbstractCondition abstractCondition : problem.getGoals()) {
       goal.addAll(getConditionList(abstractCondition));
     }
-    System.out.println("Init: " + initialState);
-    System.out.println("Goal: " + goal);
+    // System.out.println("Init: " + initialState);
+    // System.out.println("Goal: " + goal);
     Logger.log(Logger.INFO, "TIME_PART");
 
     conditions = new ArrayList<>();
@@ -374,7 +374,7 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
         conditions.add(condition);
       }
     }
-    System.out.println("Conditions: " + conditions);
+    // System.out.println("Conditions: " + conditions);
     // System.out.println("Partially grounded");
     // System.out.println(partiallyGroundedOperators);
     // eligibleArgumentCombinations = new ArrayList<>();
@@ -396,7 +396,7 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
       }
       possibleArguments.add(paramList);
     }
-    System.out.println(possibleArguments);
+    // System.out.println(possibleArguments);
     // Iterate over all operators to collect parameter information and
     // conditions
     // System.out.println("Partially grounded operators");
@@ -465,7 +465,7 @@ public class FullyLiftedSatPlanner extends LiftedPlanner {
           }
           Operator groundedOperator = operator
               .getOperatorWithGroundArguments(args);
-          System.out.println("Plan " + groundedOperator);
+          // System.out.println("Plan " + groundedOperator);
           plan.appendAtBack(groundedOperator);
         }
       }
