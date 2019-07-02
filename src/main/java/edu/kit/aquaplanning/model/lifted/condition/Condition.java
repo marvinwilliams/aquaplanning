@@ -166,6 +166,6 @@ public class Condition extends AbstractCondition {
 	
 	@Override
 	public boolean holds(java.util.function.Predicate<Condition> liftedStateMap) {
-		return negated != liftedStateMap.test(this);
+		return liftedStateMap.test(this);
 	}
 }
