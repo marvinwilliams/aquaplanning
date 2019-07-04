@@ -6,6 +6,7 @@ import edu.kit.aquaplanning.model.ground.Plan;
 import edu.kit.aquaplanning.model.lifted.PlanningProblem;
 import edu.kit.aquaplanning.planning.sat.FullyLiftedSatPlanner;
 import edu.kit.aquaplanning.planning.sat.LiftedSatPlanner;
+import edu.kit.aquaplanning.planning.sat.SequentialLiftedSatPlanner;
 import edu.kit.aquaplanning.validation.Validator;
 
 public abstract class LiftedPlanner extends Planner {
@@ -22,6 +23,8 @@ public abstract class LiftedPlanner extends Planner {
 			return new LiftedSatPlanner(config);
 		case fLiftedSat:
 			return new FullyLiftedSatPlanner(config);
+		case sLiftedSat:
+			return new SequentialLiftedSatPlanner(config);
 		default:
 			return null;
 		}

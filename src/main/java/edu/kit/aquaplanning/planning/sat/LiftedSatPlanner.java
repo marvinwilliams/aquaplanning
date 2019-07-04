@@ -10,7 +10,6 @@ import java.util.Set;
 import edu.kit.aquaplanning.Configuration;
 import edu.kit.aquaplanning.grounding.ArgumentCombinationUtils.Iterator;
 import edu.kit.aquaplanning.grounding.PlanningGraphGrounder;
-import edu.kit.aquaplanning.model.ground.GroundPlanningProblem;
 import edu.kit.aquaplanning.model.ground.OperatorPlan;
 import edu.kit.aquaplanning.model.lifted.Argument;
 import edu.kit.aquaplanning.model.lifted.Operator;

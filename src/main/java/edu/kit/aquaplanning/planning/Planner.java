@@ -8,6 +8,7 @@ import edu.kit.aquaplanning.planning.htn.TreeRexPlanner;
 import edu.kit.aquaplanning.planning.sat.FullyLiftedSatPlanner;
 import edu.kit.aquaplanning.planning.sat.HegemannsSatPlanner;
 import edu.kit.aquaplanning.planning.sat.LiftedSatPlanner;
+import edu.kit.aquaplanning.planning.sat.SequentialLiftedSatPlanner;
 import edu.kit.aquaplanning.planning.sat.SimpleSatPlanner;
 import edu.kit.aquaplanning.util.Logger;
 
@@ -51,6 +52,8 @@ public abstract class Planner {
             return new LiftedSatPlanner(config);
         case fLiftedSat:
             return new FullyLiftedSatPlanner(config);
+        case sLiftedSat:
+            return new SequentialLiftedSatPlanner(config);
 		default:
 			return null;
 		}
