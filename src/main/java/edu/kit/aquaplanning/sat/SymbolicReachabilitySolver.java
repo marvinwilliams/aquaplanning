@@ -47,7 +47,7 @@ public class SymbolicReachabilitySolver {
 				addFormulaWithOffset(srp.universalClauses, step);
 				addFormulaWithOffset(srp.transitionClauses, step - 1);
 			}
-			if (step > 100)
+			if (step > 10000)
 				return null;
 		}
 	}

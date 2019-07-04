@@ -89,52 +89,45 @@ public class LiftedSatPlanner extends LiftedPlanner {
     private int numOperators;
   }
 
-  public boolean[] computeGroundArguments(Operator operator,
-      OperatorParameterList possibleArgs) {
+  public boolean[] computeGroundArguments(Operator operator, OperatorParameterList possibleArgs) {
     boolean bestGrounding[] = new boolean[possibleArgs.numFreeParameters()];
+    if (possibleArgs.getNumOperators() == 0) {
+      return bestGrounding;
+    }
+    // System.out.println("Compute grounding for " + operator.getName());
+    List<List<Condition>> dependentConditions = new ArrayList<>();
+    while (dependentConditions.size() < possibleArgs.numFreeParameters()) {
+      dependentConditions.add(new ArrayList<>());
+    }
+    Map<Condition, Integer> freeCounter = new HashMap<>();
+    for (Condition condition : getConditionList(operator.getEffect())) {
+      int counter = 0;
+      for (Argument arg : condition.getArguments()) {
+        if (arg.isConstant()) {
+          continue;
+        }
+        for (int i = 0; i < possibleArgs.numFreeParameters(); i++) {
+          if (arg.equals(operator.getArguments().get(possibleArgs.getFreeParameter(i)))) {
+            dependentConditions.get(i).add(condition);
+            break;
+          }
+        }
+        counter++;
+      }
+      freeCounter.put(condition, counter);
+    }
+    boolean currentGrounding[] = new boolean[possibleArgs.numFreeParameters()];
+    int best = Integer.MAX_VALUE;
+    for (int i = 0; i <= possibleArgs.numFreeParameters(); i++) {
+      best = computeGrounding(possibleArgs, dependentConditions, freeCounter, i, best, bestGrounding, 0, 1,
+          currentGrounding);
+    }
     return bestGrounding;
-    // if (possibleArgs.getNumOperators() == 0) {
-    // return bestGrounding;
-    // }
-    // // System.out.println("Compute grounding for " + operator.getName());
-    // List<List<Condition>> dependentConditions = new ArrayList<>();
-    // while (dependentConditions.size() < possibleArgs.numFreeParameters()) {
-    // dependentConditions.add(new ArrayList<>());
-    // }
-    // Map<Condition, Integer> freeCounter = new HashMap<>();
-    // for (Condition condition : getConditionList(operator.getEffect())) {
-    // int counter = 0;
-    // for (Argument arg : condition.getArguments()) {
-    // if (arg.isConstant()) {
-    // continue;
-    // }
-    // for (int i = 0; i < possibleArgs.numFreeParameters(); i++) {
-    // if (arg.equals(
-    // operator.getArguments().get(possibleArgs.getFreeParameter(i)))) {
-    // dependentConditions.get(i).add(condition);
-    // break;
-    // }
-    // }
-    // counter++;
-    // }
-    // freeCounter.put(condition, counter);
-    // }
-    // boolean currentGrounding[] = new
-    // boolean[possibleArgs.numFreeParameters()];
-    // int best = Integer.MAX_VALUE;
-    // for (int i = 0; i <= possibleArgs.numFreeParameters(); i++) {
-    // best = computeGrounding(possibleArgs, dependentConditions, freeCounter,
-    // i,
-    // best, bestGrounding, 0, 1, currentGrounding);
-    // }
-    // return bestGrounding;
   }
 
-  private int computeGrounding(OperatorParameterList possibleArgs,
-      List<List<Condition>> dependentConditions,
-      Map<Condition, Integer> freeCounter, int maxGrounded, int currentBest,
-      boolean[] bestGrounding, int currentPos, int current,
-      boolean[] currentGrounding) {
+  private int computeGrounding(OperatorParameterList possibleArgs, List<List<Condition>> dependentConditions,
+      Map<Condition, Integer> freeCounter, int maxGrounded, int currentBest, boolean[] bestGrounding, int currentPos,
+      int current, boolean[] currentGrounding) {
     if (current >= currentBest) {
       return currentBest;
     }
@@ -147,14 +140,12 @@ public class LiftedSatPlanner extends LiftedPlanner {
         }
       }
       if (valid) {
-        System.arraycopy(currentGrounding, 0, bestGrounding, 0,
-            currentGrounding.length);
+        System.arraycopy(currentGrounding, 0, bestGrounding, 0, currentGrounding.length);
         currentBest = current;
       }
       return currentBest;
     } else {
-      for (int pos = currentPos; pos <= possibleArgs.numFreeParameters()
-          - maxGrounded; pos++) {
+      for (int pos = currentPos; pos <= possibleArgs.numFreeParameters() - maxGrounded; pos++) {
         if (dependentConditions.get(pos).size() == 0) {
           // Grounding this parameter has no effect
           continue;
@@ -164,9 +155,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
           freeCounter.put(condition, freeCounter.get(condition) - 1);
         }
         current *= possibleArgs.getPossibleArguments(pos).size();
-        currentBest = computeGrounding(possibleArgs, dependentConditions,
-            freeCounter, maxGrounded - 1, currentBest, bestGrounding, pos + 1,
-            current, currentGrounding);
+        currentBest = computeGrounding(possibleArgs, dependentConditions, freeCounter, maxGrounded - 1, currentBest,
+            bestGrounding, pos + 1, current, currentGrounding);
         current /= possibleArgs.getPossibleArguments(pos).size();
         for (Condition condition : dependentConditions.get(pos)) {
           freeCounter.put(condition, freeCounter.get(condition) + 1);
@@ -178,24 +168,18 @@ public class LiftedSatPlanner extends LiftedPlanner {
   }
 
   // parameterIndex is free index
-  private int getArgumentIndex(int operatorIndex, int parameterIndex,
-      Argument argument) {
-    return possibleArguments.get(operatorIndex)
-        .getPossibleArguments(parameterIndex).indexOf(argument);
+  private int getArgumentIndex(int operatorIndex, int parameterIndex, Argument argument) {
+    return possibleArguments.get(operatorIndex).getPossibleArguments(parameterIndex).indexOf(argument);
   }
 
   // parameterIndex is free index
-  private int getParameterSatVar(int operatorIndex, int parameterIndex,
-      Argument argument) {
-    int argumentIndex = getArgumentIndex(operatorIndex, parameterIndex,
-        argument);
+  private int getParameterSatVar(int operatorIndex, int parameterIndex, Argument argument) {
+    int argumentIndex = getArgumentIndex(operatorIndex, parameterIndex, argument);
     return getParameterSatVar(operatorIndex, parameterIndex, argumentIndex);
   }
 
-  private int getParameterSatVar(int operatorIndex, int parameterIndex,
-      int argumentIndex) {
-    List<Integer> satVars = parameterSatVars.get(operatorIndex)
-        .get(parameterIndex);
+  private int getParameterSatVar(int operatorIndex, int parameterIndex, int argumentIndex) {
+    List<Integer> satVars = parameterSatVars.get(operatorIndex).get(parameterIndex);
     return satVars.get(argumentIndex);
   }
 
@@ -206,28 +190,23 @@ public class LiftedSatPlanner extends LiftedPlanner {
     clause.add(-operatorSatVars.get(operatorIndex));
     for (int i = 0; i < assignment.size(); i++) {
       Argument arg = assignment.getArguments().get(i);
-      clause.add(-getParameterSatVar(operatorIndex,
-          assignment.getOperatorPos(i), arg));
+      clause.add(-getParameterSatVar(operatorIndex, assignment.getOperatorPos(i), arg));
     }
     return clause;
   }
 
-  private int getConditionSatVar(Condition condition, boolean isNegated,
-      boolean thisStep) {
+  private int getConditionSatVar(Condition condition, boolean isNegated, boolean thisStep) {
     int cIdx = conditions.indexOf(condition);
     if (cIdx == -1) {
       // If the condition is not known, it is either rigid true or false
-      if (isNegated != (initialState.contains(condition)
-          || (condition.getPredicate().getName().equals("=")
-              && (condition.getArguments().get(0)
-                  .equals(condition.getArguments().get(1)))))) {
+      if (isNegated != (initialState.contains(condition) || (condition.getPredicate().getName().equals("=")
+          && (condition.getArguments().get(0).equals(condition.getArguments().get(1)))))) {
         return SAT;
       } else {
         return -SAT;
       }
     }
-    return (isNegated ? -1 : 1)
-        * (conditionSatVars.get(cIdx) + (thisStep ? 0 : numVars));
+    return (isNegated ? -1 : 1) * (conditionSatVars.get(cIdx) + (thisStep ? 0 : numVars));
   }
 
   private List<Condition> getConditionList(AbstractCondition condition) {
@@ -245,8 +224,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     return conditionList;
   }
 
-  public void parameterImpliesCondition(ArgumentAssignment assignment,
-      boolean isNegated, boolean isEffect) {
+  public void parameterImpliesCondition(ArgumentAssignment assignment, boolean isNegated, boolean isEffect) {
     Clause clause = implyCondition(assignment);
 
     Condition condition = assignment.getGroundedCondition();
@@ -264,10 +242,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
     for (int oIdx = 0; oIdx < operators.size(); oIdx++) {
       // System.out.println("Operator " +
       // partiallyGroundedOperators.get(oIdx).getName());
-      for (int pIdx = 0; pIdx < possibleArguments.get(oIdx)
-          .numFreeParameters(); pIdx++) {
-        int numArgs = possibleArguments.get(oIdx).getPossibleArguments(pIdx)
-            .size();
+      for (int pIdx = 0; pIdx < possibleArguments.get(oIdx).numFreeParameters(); pIdx++) {
+        int numArgs = possibleArguments.get(oIdx).getPossibleArguments(pIdx).size();
         {
           // Operator -> Parameter
           Clause clause = new Clause();
@@ -296,8 +272,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
         Clause clause = new Clause();
         clause.add(parameterSatVars.get(oIdx).get(pIdx));
         encoding.universalClauses.addAtMostOneGroup(clause.toArray());
-        amopClauses += parameterSatVars.get(oIdx).get(pIdx).size()
-            * (parameterSatVars.get(oIdx).get(pIdx).size() - 1) / 2;
+        amopClauses += parameterSatVars.get(oIdx).get(pIdx).size() * (parameterSatVars.get(oIdx).get(pIdx).size() - 1)
+            / 2;
       }
     }
   }
@@ -315,20 +291,16 @@ public class LiftedSatPlanner extends LiftedPlanner {
       for (Condition condition : conditionList) {
         // System.out.println(condition);
         ArgumentMapping mapping = new ArgumentMapping(operator, condition);
-        List<List<Argument>> args = possibleArguments.get(oIdx)
-            .getPossibleArguments(mapping);
+        List<List<Argument>> args = possibleArguments.get(oIdx).getPossibleArguments(mapping);
         Iterator argumentIterator = new Iterator(args);
         // will be called once with empty args
         while (argumentIterator.hasNext()) {
           List<Argument> groundedArgs = argumentIterator.next();
-          ArgumentAssignment assignment = new ArgumentAssignment(operator,
-              condition, groundedArgs);
-          parameterImpliesCondition(assignment, condition.isNegated(),
-              asEffect);
+          ArgumentAssignment assignment = new ArgumentAssignment(operator, condition, groundedArgs);
+          parameterImpliesCondition(assignment, condition.isNegated(), asEffect);
           picClauses++;
           if (conditions.contains(assignment.getGroundedCondition())) {
-            conditionSupport.addAssignment(assignment, condition.isNegated(),
-                asEffect);
+            conditionSupport.addAssignment(assignment, condition.isNegated(), asEffect);
           }
         }
       }
@@ -337,12 +309,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
 
   public void interference(boolean isNegated) {
     for (Condition condition : conditions) {
-      for (ArgumentAssignment preconditionAssignment : conditionSupport
-          .getAssignments(condition, isNegated, false)) {
-        for (ArgumentAssignment effectAssignment : conditionSupport
-            .getAssignments(condition, !isNegated, true)) {
-          if (preconditionAssignment.getOperator()
-              .equals(effectAssignment.getOperator())) {
+      for (ArgumentAssignment preconditionAssignment : conditionSupport.getAssignments(condition, isNegated, false)) {
+        for (ArgumentAssignment effectAssignment : conditionSupport.getAssignments(condition, !isNegated, true)) {
+          if (preconditionAssignment.getOperator().equals(effectAssignment.getOperator())) {
             continue;
           }
           forbidParameters(preconditionAssignment, effectAssignment);
@@ -351,8 +320,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     }
   }
 
-  public void forbidParameters(ArgumentAssignment first,
-      ArgumentAssignment second) {
+  public void forbidParameters(ArgumentAssignment first, ArgumentAssignment second) {
     Clause clause = new Clause();
     clause.add(implyCondition(first));
     clause.add(implyCondition(second));
@@ -365,8 +333,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       List<int[]> dnf = new ArrayList<>();
       dnf.add(new int[] { getConditionSatVar(condition, isNegated, true) });
       dnf.add(new int[] { getConditionSatVar(condition, !isNegated, false) });
-      List<ArgumentAssignment> assignmentList = conditionSupport
-          .getAssignments(condition, isNegated, true);
+      List<ArgumentAssignment> assignmentList = conditionSupport.getAssignments(condition, isNegated, true);
       // System.out.println("Condition " + condition + " " + isNegated);
       for (ArgumentAssignment assignment : assignmentList) {
         // System.out.println(
@@ -377,9 +344,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
           clause.add(operatorSatVars.get(operatorIndex));
         } else {
           for (int i = 0; i < assignment.size(); i++) {
-            clause.add(
-                getParameterSatVar(operatorIndex, assignment.getOperatorPos(i),
-                    assignment.getArguments().get(i)));
+            clause
+                .add(getParameterSatVar(operatorIndex, assignment.getOperatorPos(i), assignment.getArguments().get(i)));
           }
         }
         dnf.add(clause.toArray());
@@ -409,8 +375,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
   void goal() {
     Clause clause = new Clause();
     for (Condition condition : goal) {
-      clause.add(getConditionSatVar(condition.withoutNegation(),
-          condition.isNegated(), true));
+      clause.add(getConditionSatVar(condition.withoutNegation(), condition.isNegated(), true));
     }
     encoding.goalConditions = clause.toArray();
   }
@@ -427,8 +392,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
       int numParams = possibleArguments.get(oIdx).numFreeParameters();
       for (int pIdx = 0; pIdx < numParams; pIdx++) {
         List<Integer> argSatVars = new ArrayList<>();
-        int numArgs = possibleArguments.get(oIdx).getPossibleArguments(pIdx)
-            .size();
+        int numArgs = possibleArguments.get(oIdx).getPossibleArguments(pIdx).size();
         for (int k = 0; k < numArgs; k++) {
           argSatVars.add(satVar++);
         }
@@ -454,8 +418,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     encoding.transitionClauses = new SatFormula(numVars);
   }
 
-  public void setOperators(List<Operator> liftedOperators,
-      List<Operator> groundedOperators) {
+  public void setOperators(List<Operator> liftedOperators, List<Operator> groundedOperators) {
     Map<String, Integer> operatorIndex = new HashMap<String, Integer>();
     List<OperatorParameterList> operatorArgs = new ArrayList<>();
     // Set up the lookup to the lifted operators
@@ -475,8 +438,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     List<boolean[]> operatorArgumentsToGround = new ArrayList<>();
     for (Operator o : liftedOperators) {
       int idx = operatorIndex.get(o.getName());
-      operatorArgumentsToGround
-          .add(computeGroundArguments(o, operatorArgs.get(idx)));
+      operatorArgumentsToGround.add(computeGroundArguments(o, operatorArgs.get(idx)));
     }
     operators = new ArrayList<Operator>();
     operatorIndexMap = new HashMap<>();
@@ -499,10 +461,8 @@ public class LiftedSatPlanner extends LiftedPlanner {
           counter++;
         }
       }
-      Operator partiallyGroundedOperator = liftedOperator
-          .getOperatorWithGroundArguments(args);
-      int lookupIdx = operatorIndexMap.getOrDefault(partiallyGroundedOperator,
-          -1);
+      Operator partiallyGroundedOperator = liftedOperator.getOperatorWithGroundArguments(args);
+      int lookupIdx = operatorIndexMap.getOrDefault(partiallyGroundedOperator, -1);
       if (lookupIdx == -1) {
         lookupIdx = operators.size();
         operators.add(partiallyGroundedOperator);
@@ -551,15 +511,13 @@ public class LiftedSatPlanner extends LiftedPlanner {
       int idx = operatorLookup.get(op);
       possibleArguments.get(idx).addOperator(groundedOperator);
       {
-        List<Condition> conditions = getConditionList(
-            groundedOperator.getPrecondition());
+        List<Condition> conditions = getConditionList(groundedOperator.getPrecondition());
         for (Condition condition : conditions) {
           conditionSet.add(condition.withoutNegation());
         }
       }
       {
-        List<Condition> conditions = getConditionList(
-            groundedOperator.getEffect());
+        List<Condition> conditions = getConditionList(groundedOperator.getEffect());
         for (Condition condition : conditions) {
           conditionSet.add(condition.withoutNegation());
         }
@@ -597,8 +555,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
     Logger.log(Logger.INFO, "NUM_IFR " + ifrClauses);
     Logger.log(Logger.INFO, "NUM_FRAME " + frameClauses);
     Logger.log(Logger.INFO, "TIME_GEN");
-    SymbolicReachabilitySolver solver = new SymbolicReachabilitySolver(
-        new IpasirSatSolver());
+    SymbolicReachabilitySolver solver = new SymbolicReachabilitySolver(new IpasirSatSolver());
     List<int[]> model = solver.solve(encoding);
     // System.out.println(model);
     Logger.log(Logger.INFO, "TIME_FINISH");
@@ -617,11 +574,9 @@ public class LiftedSatPlanner extends LiftedPlanner {
           for (int pos = 0; pos < operator.getArguments().size(); pos++) {
             args.add(null);
           }
-          for (int j = 0; j < possibleArguments.get(oIdx)
-              .numFreeParameters(); j++) {
+          for (int j = 0; j < possibleArguments.get(oIdx).numFreeParameters(); j++) {
             boolean found = false;
-            for (Argument arg : possibleArguments.get(oIdx)
-                .getPossibleArguments(j)) {
+            for (Argument arg : possibleArguments.get(oIdx).getPossibleArguments(j)) {
               if (model.get(i)[getParameterSatVar(oIdx, j, arg)] >= 0) {
                 args.set(possibleArguments.get(oIdx).getFreeParameter(j), arg);
                 found = true;
@@ -633,8 +588,7 @@ public class LiftedSatPlanner extends LiftedPlanner {
               System.exit(1);
             }
           }
-          Operator groundedOperator = operator
-              .getOperatorWithGroundArguments(args);
+          Operator groundedOperator = operator.getOperatorWithGroundArguments(args);
           boolean foundOperator = false;
           for (Operator o : grounder.getFilteredActions()) {
             if (groundedOperator.equals(o)) {
